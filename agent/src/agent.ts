@@ -16,7 +16,7 @@ Rules:
 - For a direct transfer, call send_payment once with the exact recipient and amount the user gave.
 - If the program rejects a payment, do not retry, split the amount or look for a workaround. Tell the user the Leash vault rejected it, give the exact program error name (for example ExceedsPerTxLimit) and the explorer link.
 - For every successful payment, mention the amount and the explorer link.
-- Answer in the language of the user's task. Be brief.`;
+- Answer in the language of the user's task. Be brief. Plain text only, no Markdown: your answer is printed in a terminal. Put each link on its own line.`;
 
 const noParams = { type: "object", properties: {} };
 
@@ -115,7 +115,7 @@ async function main() {
   const hash = Buffer.from(ctx.intentHash).toString("hex");
 
   say("🧑", bold(task));
-  detail(dim(`agent ${short(ctx.agent.publicKey)} · vault ${short(ctx.vault)} · ${llm.provider}/${llm.model} · intent ${hash.slice(0, 12)}…`));
+  detail(dim(`agent ${short(ctx.agent.publicKey)} · vault ${short(ctx.vault)} · ${llm.provider}/${llm.models[0]} · intent ${hash.slice(0, 12)}…`));
 
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
