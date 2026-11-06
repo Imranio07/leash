@@ -1,0 +1,31 @@
+# Build output (target/deploy also holds the program keypair)
+.anchor
+target
+**/*.rs.bk
+test-ledger
+.surfpool
+
+# JS
+node_modules
+.yarn
+dist
+build
+.next
+out
+
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+id.json
+*-keypair.json
+*keypair*.json
+keys/
+wallets/
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
