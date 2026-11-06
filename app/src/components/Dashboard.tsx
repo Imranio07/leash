@@ -6,6 +6,7 @@ import { PROGRAM_ID, short, USDC_MINT } from "@/lib/config";
 import { useActivity } from "@/lib/activity";
 import { useBalances, useIsDevnet, useKeys, useVault } from "@/lib/hooks";
 import ActivityLog from "./ActivityLog";
+import AgentConsole from "./AgentConsole";
 import CreateVaultForm from "./CreateVaultForm";
 import DepositForm from "./DepositForm";
 import FaucetButton from "./FaucetButton";
@@ -114,7 +115,11 @@ function Screen() {
         </section>
 
         <section className="flex flex-col gap-6">
-          <div className="card text-zinc-500">Agent console comes next.</div>
+          <AgentConsole
+            vault={vault.view.state ? vault.address : null}
+            revoked={vault.view.state?.revoked ?? false}
+            onFinished={refreshAll}
+          />
         </section>
       </main>
     </div>

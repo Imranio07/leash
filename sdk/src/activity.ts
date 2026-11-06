@@ -57,6 +57,21 @@ function instructionCoder(program: LeashProgram): BorshInstructionCoder {
 }
 
 /**
+ * When a payment is rejected, the recipient's token account may not exist (its creation in
+ * the same transaction was rolled back), so there is no token balance naming the wallet.
+ * The agent creates the account with the Associated Token program, whose parsed
+ * instruction does name it.
+ */
+function walletFromAtaCreation(instructions: ParsedTransactionWithMeta["transaction"]["message"]["instructions"], tokenAccount: PublicKey): string | undefined {
+  for (const ix of instructions) {
+    if (!("parsed" in ix)) continue;
+    const parsed = ix.parsed as { type?: string; info?: { account?: string; wallet?: string } } | undefined;
+    if (parsed?.type?.startsWith("create") && parsed.info?.account === tokenAccount.toBase58()) return parsed.info.wallet;
+  }
+  return undefined;
+}
+
+/**
  * Decodes one transaction into activity entries, one per Leash instruction
  * (a create + deposit transaction gives two). Empty when Leash is not invoked.
  * A failed transaction gives a single entry for the instruction that failed.
@@ -109,7 +124,7 @@ export function decodeActivity(program: LeashProgram, tx: ParsedTransactionWithM
       if (tokenAccount) {
         const accountIndex = message.accountKeys.findIndex((k) => k.pubkey.equals(tokenAccount));
         const balance = tx.meta?.postTokenBalances?.find((b) => b.accountIndex === accountIndex);
-        entry.recipient = balance?.owner ?? tokenAccount.toBase58();
+        entry.recipient = balance?.owner ?? walletFromAtaCreation(message.instructions, tokenAccount) ?? tokenAccount.toBase58();
       }
     }
     if (!ok) entry.error = decodeError(tx.meta?.err ?? null, logs).name;
@@ -128,7 +143,8 @@ export function decodeActivity(program: LeashProgram, tx: ParsedTransactionWithM
           name: string;
           data: Record<string, unknown>;
         } | null;
-        if (event?.name !== "PaymentEvent") continue;
+        // Anchor's TS coder camel-cases event names ("paymentEvent").
+        if (event?.name.toLowerCase() !== "paymentevent") continue;
         const target = payments[i++];
         if (!target) break;
         const d = event.data as {
