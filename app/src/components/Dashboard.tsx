@@ -9,6 +9,7 @@ import ActivityLog from "./ActivityLog";
 import CreateVaultForm from "./CreateVaultForm";
 import DepositForm from "./DepositForm";
 import FaucetButton from "./FaucetButton";
+import OwnerActions from "./OwnerActions";
 import Providers from "./Providers";
 import VaultCard from "./VaultCard";
 import WalletPanel, { Hint } from "./WalletPanel";
@@ -100,6 +101,13 @@ function Screen() {
                   onDone={refreshAll}
                 />
               </div>
+              <OwnerActions
+                program={vault.program}
+                vaultAddress={vault.address}
+                state={vault.view.state}
+                balance={vault.view.balance}
+                onDone={refreshAll}
+              />
               <ActivityLog view={activity.view} labels={labels} />
             </>
           )}
