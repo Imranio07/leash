@@ -9,6 +9,7 @@ import { formatUsdc } from "./money";
 export type ActivityKind = "agent_pay" | "create_vault" | "deposit" | "update_policy" | "revoke" | "withdraw" | "other";
 
 export interface ActivityEntry {
+  /** Transaction signature, with "#<index>" appended when one transaction yields several rows. */
   signature: string;
   /** Unix seconds; null when the RPC has no block time yet. */
   time: number | null;
@@ -55,76 +56,97 @@ function instructionCoder(program: LeashProgram): BorshInstructionCoder {
   return coder;
 }
 
-/** Decodes one transaction. Returns null when it does not invoke the Leash program. */
-export function decodeActivity(program: LeashProgram, tx: ParsedTransactionWithMeta): ActivityEntry | null {
+/**
+ * Decodes one transaction into activity entries, one per Leash instruction
+ * (a create + deposit transaction gives two). Empty when Leash is not invoked.
+ * A failed transaction gives a single entry for the instruction that failed.
+ */
+export function decodeActivity(program: LeashProgram, tx: ParsedTransactionWithMeta): ActivityEntry[] {
   const programId = program.programId;
   const message = tx.transaction.message;
-  const ix = message.instructions.find(
-    (i): i is PartiallyDecodedInstruction => i.programId.equals(programId) && "data" in i,
-  );
-  if (!ix) return null;
+  const leashIxs = message.instructions
+    .map((ix, index) => ({ ix, index }))
+    .filter((x): x is { ix: PartiallyDecodedInstruction; index: number } => x.ix.programId.equals(programId) && "data" in x.ix);
+  if (!leashIxs.length) return [];
 
-  const entry: ActivityEntry = {
-    signature: tx.transaction.signatures[0]!,
-    time: tx.blockTime ?? null,
-    slot: tx.slot,
-    kind: "other",
-    ok: !tx.meta?.err,
-    signer: message.accountKeys.find((k) => k.signer)?.pubkey.toBase58(),
-  };
-
-  let decoded: DecodedIx | null = null;
-  try {
-    decoded = instructionCoder(program).decode(ix.data, "base58") as DecodedIx | null;
-  } catch {
-    // Unknown instruction layout (e.g. an older program version): keep kind "other".
-  }
-  if (decoded) {
-    entry.kind = KIND_BY_IX[decoded.name] ?? "other";
-    const amount = decoded.data.amount as { toString(): string } | undefined;
-    if (amount !== undefined) entry.amount = BigInt(amount.toString());
-    const hash = decoded.data.intentHash as number[] | undefined;
-    if (hash) entry.intentHash = toHex(hash);
-  }
-
-  if (entry.kind === "agent_pay") {
-    // The recipient wallet is the owner of the 5th account (recipient_token_account).
-    const tokenAccount = ix.accounts[4];
-    if (tokenAccount) {
-      const index = message.accountKeys.findIndex((k) => k.pubkey.equals(tokenAccount));
-      const balance = tx.meta?.postTokenBalances?.find((b) => b.accountIndex === index);
-      entry.recipient = balance?.owner ?? tokenAccount.toBase58();
-    }
-  }
-
+  const ok = !tx.meta?.err;
   const logs = tx.meta?.logMessages ?? [];
-  if (!entry.ok) {
-    entry.error = decodeError(tx.meta?.err ?? null, logs).name;
-    return entry;
-  }
+  const signer = message.accountKeys.find((k) => k.signer)?.pubkey.toBase58();
 
-  // PaymentEvent carries the authoritative recipient wallet and the running total.
-  for (const line of logs) {
-    const data = line.startsWith("Program data: ") ? line.slice("Program data: ".length) : null;
-    if (!data) continue;
+  // Which instruction failed, so the error is attached to the right row.
+  let failedIndex: number | null = null;
+  if (!ok) {
+    const err = tx.meta?.err as { InstructionError?: [number, unknown] } | null;
+    failedIndex = err?.InstructionError?.[0] ?? null;
+  }
+  const chosen = ok ? leashIxs : [leashIxs.find((x) => x.index === failedIndex) ?? leashIxs[0]!];
+
+  const entries = chosen.map(({ ix, index }) => {
+    const entry: ActivityEntry = {
+      signature: `${tx.transaction.signatures[0]!}${chosen.length > 1 ? `#${index}` : ""}`,
+      time: tx.blockTime ?? null,
+      slot: tx.slot,
+      kind: "other",
+      ok,
+      signer,
+    };
+    let decoded: DecodedIx | null = null;
     try {
-      const event = program.coder.events.decode(data) as { name: string; data: Record<string, unknown> } | null;
-      if (event?.name !== "PaymentEvent") continue;
-      const d = event.data as {
-        recipient: PublicKey;
-        amount: { toString(): string };
-        intentHash: number[];
-        spentToday: { toString(): string };
-      };
-      entry.recipient = d.recipient.toBase58();
-      entry.amount = BigInt(d.amount.toString());
-      entry.intentHash = toHex(d.intentHash);
-      entry.spentToday = BigInt(d.spentToday.toString());
+      decoded = instructionCoder(program).decode(ix.data, "base58") as DecodedIx | null;
     } catch {
-      // Not one of our events.
+      // Unknown instruction layout (e.g. an older program version): keep kind "other".
+    }
+    if (decoded) {
+      entry.kind = KIND_BY_IX[decoded.name] ?? "other";
+      const amount = decoded.data.amount as { toString(): string } | undefined;
+      if (amount !== undefined) entry.amount = BigInt(amount.toString());
+      const hash = decoded.data.intentHash as number[] | undefined;
+      if (hash) entry.intentHash = toHex(hash);
+    }
+    if (entry.kind === "agent_pay") {
+      // The recipient wallet is the owner of the 5th account (recipient_token_account).
+      const tokenAccount = ix.accounts[4];
+      if (tokenAccount) {
+        const accountIndex = message.accountKeys.findIndex((k) => k.pubkey.equals(tokenAccount));
+        const balance = tx.meta?.postTokenBalances?.find((b) => b.accountIndex === accountIndex);
+        entry.recipient = balance?.owner ?? tokenAccount.toBase58();
+      }
+    }
+    if (!ok) entry.error = decodeError(tx.meta?.err ?? null, logs).name;
+    return entry;
+  });
+
+  // PaymentEvents carry the authoritative recipient wallet and the running total,
+  // one per successful agent_pay, in order.
+  if (ok) {
+    const payments = entries.filter((e) => e.kind === "agent_pay");
+    let i = 0;
+    for (const line of logs) {
+      if (!line.startsWith("Program data: ")) continue;
+      try {
+        const event = program.coder.events.decode(line.slice("Program data: ".length)) as {
+          name: string;
+          data: Record<string, unknown>;
+        } | null;
+        if (event?.name !== "PaymentEvent") continue;
+        const target = payments[i++];
+        if (!target) break;
+        const d = event.data as {
+          recipient: PublicKey;
+          amount: { toString(): string };
+          intentHash: number[];
+          spentToday: { toString(): string };
+        };
+        target.recipient = d.recipient.toBase58();
+        target.amount = BigInt(d.amount.toString());
+        target.intentHash = toHex(d.intentHash);
+        target.spentToday = BigInt(d.spentToday.toString());
+      } catch {
+        // Not one of our events.
+      }
     }
   }
-  return entry;
+  return entries;
 }
 
 /** One-line description for logs and UIs. */

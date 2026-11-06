@@ -42,8 +42,9 @@ const PROVIDERS: Record<"gemini" | "groq", Provider> = {
   },
   groq: {
     baseUrl: "https://api.groq.com/openai/v1",
-    model: "llama-3.3-70b-versatile",
-    fallbackModels: [],
+    // Groq retires models often; these two support tool calling as of Nov 2026.
+    model: "openai/gpt-oss-120b",
+    fallbackModels: ["openai/gpt-oss-20b"],
     keyVar: "GROQ_API_KEY",
     temperature: 0,
   },

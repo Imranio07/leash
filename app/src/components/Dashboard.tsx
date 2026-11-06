@@ -3,7 +3,9 @@
 import { explorerAddress } from "@leash/sdk";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { PROGRAM_ID, short, USDC_MINT } from "@/lib/config";
+import { useActivity } from "@/lib/activity";
 import { useBalances, useIsDevnet, useKeys, useVault } from "@/lib/hooks";
+import ActivityLog from "./ActivityLog";
 import CreateVaultForm from "./CreateVaultForm";
 import DepositForm from "./DepositForm";
 import FaucetButton from "./FaucetButton";
@@ -23,12 +25,15 @@ function Screen() {
   const { publicKey } = useWallet();
   const isDevnet = useIsDevnet();
   const { balances, refresh: refreshBalances } = useBalances(publicKey);
+  const { keys, error: keysError, reload: reloadKeys } = useKeys();
+  const vault = useVault(publicKey, keys?.agent ?? null);
+  const activity = useActivity(vault.program, vault.view.state ? vault.address : null);
   const refreshAll = () => {
     refreshBalances();
     vault.refresh();
+    activity.refresh();
   };
-  const { keys, error: keysError, reload: reloadKeys } = useKeys();
-  const vault = useVault(publicKey, keys?.agent ?? null);
+  const labels = new Map(Object.entries(keys?.services ?? {}).map(([name, k]) => [k.toBase58(), `${name} service`]));
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -95,6 +100,7 @@ function Screen() {
                   onDone={refreshAll}
                 />
               </div>
+              <ActivityLog view={activity.view} labels={labels} />
             </>
           )}
         </section>
