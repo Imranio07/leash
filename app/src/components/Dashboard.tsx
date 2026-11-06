@@ -2,9 +2,11 @@
 
 import { explorerAddress } from "@leash/sdk";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { PROGRAM_ID, short } from "@/lib/config";
+import { PROGRAM_ID, short, USDC_MINT } from "@/lib/config";
 import { useBalances, useIsDevnet, useKeys, useVault } from "@/lib/hooks";
 import CreateVaultForm from "./CreateVaultForm";
+import DepositForm from "./DepositForm";
+import FaucetButton from "./FaucetButton";
 import Providers from "./Providers";
 import VaultCard from "./VaultCard";
 import WalletPanel, { Hint } from "./WalletPanel";
@@ -20,7 +22,11 @@ export default function Dashboard() {
 function Screen() {
   const { publicKey } = useWallet();
   const isDevnet = useIsDevnet();
-  const { balances } = useBalances(publicKey);
+  const { balances, refresh: refreshBalances } = useBalances(publicKey);
+  const refreshAll = () => {
+    refreshBalances();
+    vault.refresh();
+  };
   const { keys, error: keysError } = useKeys();
   const vault = useVault(publicKey, keys?.agent ?? null);
 
@@ -46,7 +52,11 @@ function Screen() {
 
       <main className="grid gap-6 lg:grid-cols-2">
         <section className="flex flex-col gap-6">
-          <WalletPanel balances={balances} isDevnet={isDevnet} />
+          <WalletPanel
+            balances={balances}
+            isDevnet={isDevnet}
+            usdcAction={publicKey && USDC_MINT ? <FaucetButton wallet={publicKey} onDone={refreshBalances} /> : null}
+          />
 
           {keysError && (
             <div className="card">
@@ -60,12 +70,23 @@ function Screen() {
               keys={keys}
               vaultAddress={vault.address}
               balances={balances}
-              onCreated={vault.refresh}
+              onCreated={refreshAll}
             />
           )}
 
           {publicKey && vault.address && vault.view.state && (
-            <VaultCard address={vault.address} state={vault.view.state} balance={vault.view.balance} />
+            <>
+              <VaultCard address={vault.address} state={vault.view.state} balance={vault.view.balance} />
+              <div className="card">
+                <DepositForm
+                  program={vault.program}
+                  vaultAddress={vault.address}
+                  mint={vault.view.state.mint}
+                  balances={balances}
+                  onDone={refreshAll}
+                />
+              </div>
+            </>
           )}
         </section>
 
