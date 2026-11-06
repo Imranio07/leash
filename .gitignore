@@ -29,3 +29,6 @@ wallets/
 .DS_Store
 .vscode/
 .idea/
+
+# Agent payment log
+logs/

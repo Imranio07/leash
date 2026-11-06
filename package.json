@@ -1,0 +1,26 @@
+{
+  "name": "leash",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "sdk",
+    "services",
+    "agent"
+  ],
+  "scripts": {
+    "setup": "tsx scripts/setup.ts",
+    "owner": "tsx scripts/owner.ts",
+    "services": "tsx services/src/server.ts",
+    "agent": "tsx agent/src/agent.ts",
+    "pay": "tsx agent/src/manual.ts pay",
+    "call": "tsx agent/src/manual.ts call",
+    "budget": "tsx agent/src/manual.ts budget",
+    "sync-idl": "cp target/idl/leash.json sdk/src/idl/leash.json && cp target/types/leash.ts sdk/src/idl/leash.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3"
+  }
+}
