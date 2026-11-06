@@ -10,7 +10,7 @@ import {
   type TransactionError,
   type TransactionInstruction,
 } from "@solana/web3.js";
-import idlJson from "./idl/leash.json" with { type: "json" };
+import idlJson from "./idl/leash.json";
 import type { Leash } from "./idl/leash";
 
 export const LEASH_PROGRAM_ID = new PublicKey(idlJson.address);
@@ -20,16 +20,14 @@ const SECONDS_PER_DAY = 86_400;
 export type LeashProgram = Program<Leash>;
 
 /** Program client for building instructions and reading accounts (it never signs). */
-export function leashProgram(connection: Connection): LeashProgram {
+export function leashProgram(connection: Connection, programId: PublicKey = LEASH_PROGRAM_ID): LeashProgram {
   const provider: Provider = { connection };
-  return new Program<Leash>(idlJson as Leash, provider);
+  const idl = programId.equals(LEASH_PROGRAM_ID) ? idlJson : { ...idlJson, address: programId.toBase58() };
+  return new Program<Leash>(idl as Leash, provider);
 }
 
-export function vaultAddress(owner: PublicKey, agent: PublicKey): PublicKey {
-  return PublicKey.findProgramAddressSync(
-    [VAULT_SEED, owner.toBytes(), agent.toBytes()],
-    LEASH_PROGRAM_ID,
-  )[0];
+export function vaultAddress(owner: PublicKey, agent: PublicKey, programId: PublicKey = LEASH_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync([VAULT_SEED, owner.toBytes(), agent.toBytes()], programId)[0];
 }
 
 /** The vault's token account: the ATA of the vault PDA. */

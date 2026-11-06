@@ -32,3 +32,7 @@ wallets/
 
 # Agent payment log
 logs/
+
+# Next.js
+next-env.d.ts
+*.tsbuildinfo

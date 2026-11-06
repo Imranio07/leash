@@ -25,7 +25,7 @@ export interface ToolDef {
 interface Provider {
   baseUrl: string;
   model: string;
-  /** Tried in order when the model above is overloaded, hangs or is out of quota. */
+  /** Tried in order (after `model`) when a model is overloaded, hangs or is out of quota. */
   fallbackModels: string[];
   keyVar: string;
   /** Omitted for Gemini 3: Google recommends its default temperature (low values can loop). */
@@ -50,37 +50,65 @@ const PROVIDERS: Record<"gemini" | "groq", Provider> = {
 };
 
 export type ProviderName = keyof typeof PROVIDERS;
+const PROVIDER_NAMES = Object.keys(PROVIDERS) as ProviderName[];
 
-export interface LlmConfig {
+export interface ModelRef {
   provider: ProviderName;
-  /** Primary model first, then fallbacks. */
-  models: string[];
-  baseUrl: string;
-  apiKey: string;
-  temperature?: number;
+  model: string;
 }
 
-/** Reads LLM_PROVIDER, LLM_MODEL, LLM_FALLBACK_MODELS and the provider's API key from .env. */
+export interface LlmConfig {
+  /** Primary model first, then fallbacks, possibly from other providers. */
+  chain: ModelRef[];
+  keys: Partial<Record<ProviderName, string>>;
+}
+
+export const modelLabel = (m: ModelRef) => `${m.provider}:${m.model}`;
+
+/** "groq:llama-3.3-70b-versatile" or a bare model name (uses `defaultProvider`). */
+function parseModelRef(text: string, defaultProvider: ProviderName): ModelRef {
+  const m = /^([a-z]+):(.+)$/.exec(text.trim());
+  if (m && PROVIDER_NAMES.includes(m[1] as ProviderName)) return { provider: m[1] as ProviderName, model: m[2]! };
+  return { provider: defaultProvider, model: text.trim() };
+}
+
+/**
+ * Reads LLM_PROVIDER, LLM_MODEL, LLM_FALLBACK_MODELS and the API keys from .env.
+ * Default chain: the provider's own models, then the default model of every other provider
+ * that has a key. Models whose provider has no key are dropped.
+ */
 export function llmConfigFromEnv(): LlmConfig {
   const provider = env("LLM_PROVIDER", "gemini") as ProviderName;
   const p = PROVIDERS[provider];
-  if (!p) throw new Error(`LLM_PROVIDER must be one of: ${Object.keys(PROVIDERS).join(", ")}`);
-  const apiKey = env(p.keyVar);
-  if (!apiKey) throw new Error(`${p.keyVar} is empty. Put your key in .env (see .env.example).`);
+  if (!p) throw new Error(`LLM_PROVIDER must be one of: ${PROVIDER_NAMES.join(", ")}`);
+  const keys: Partial<Record<ProviderName, string>> = {};
+  for (const name of PROVIDER_NAMES) {
+    const key = env(PROVIDERS[name].keyVar);
+    if (key) keys[name] = key;
+  }
+  if (!keys[provider]) throw new Error(`${p.keyVar} is empty. Put your key in .env (see .env.example).`);
+
+  const primary: ModelRef = { provider, model: env("LLM_MODEL", p.model) };
   const fallbackEnv = env("LLM_FALLBACK_MODELS");
-  const fallbacks =
-    fallbackEnv === "none"
-      ? []
-      : fallbackEnv
-        ? fallbackEnv.split(",").map((m) => m.trim()).filter(Boolean)
-        : p.fallbackModels;
-  return {
-    provider,
-    models: [...new Set([env("LLM_MODEL", p.model), ...fallbacks])],
-    baseUrl: p.baseUrl,
-    apiKey,
-    temperature: p.temperature,
-  };
+  let fallbacks: ModelRef[];
+  if (fallbackEnv === "none") {
+    fallbacks = [];
+  } else if (fallbackEnv) {
+    fallbacks = fallbackEnv.split(",").filter((t) => t.trim()).map((t) => parseModelRef(t, provider));
+  } else {
+    fallbacks = [
+      ...p.fallbackModels.map((model) => ({ provider, model })),
+      ...PROVIDER_NAMES.filter((n) => n !== provider).map((n) => ({ provider: n, model: PROVIDERS[n].model })),
+    ];
+  }
+  const seen = new Set<string>();
+  const chain = [primary, ...fallbacks].filter((m) => {
+    const label = modelLabel(m);
+    if (seen.has(label) || !keys[m.provider]) return false;
+    seen.add(label);
+    return true;
+  });
+  return { chain, keys };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -107,22 +135,23 @@ const unavailable = new Set<string>();
 
 async function chatWithModel(
   cfg: LlmConfig,
-  model: string,
+  ref: ModelRef,
   messages: ChatMessage[],
   tools?: ToolDef[],
 ): Promise<ChatMessage> {
+  const p = PROVIDERS[ref.provider];
   const body = JSON.stringify({
-    model,
+    model: ref.model,
     messages,
-    ...(cfg.temperature !== undefined ? { temperature: cfg.temperature } : {}),
+    ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
     ...(tools?.length ? { tools, tool_choice: "auto" } : {}),
   });
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+      res = await fetch(`${p.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.keys[ref.provider]}` },
         body,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
@@ -135,13 +164,13 @@ async function chatWithModel(
     if (res.ok) {
       const data = (await res.json()) as { choices?: { message: ChatMessage }[] };
       const msg = data.choices?.[0]?.message;
-      if (!msg) throw new Error(`${cfg.provider}/${model}: empty response`);
+      if (!msg) throw new Error(`${modelLabel(ref)}: empty response`);
       return msg;
     }
     const raw = await res.text();
     if (res.status === 429 && /per ?day/i.test(raw)) throw new ModelUnavailable("daily free-tier quota used up");
     const retryable = res.status === 429 || res.status >= 500;
-    if (!retryable) throw new Error(`${cfg.provider}/${model} ${res.status}: ${errorMessage(raw)}`);
+    if (!retryable) throw new Error(`${modelLabel(ref)} ${res.status}: ${errorMessage(raw)}`);
     // Overloaded or rate-limited: a couple of short retries, then try the next model.
     if (attempt >= 2) throw new ModelUnavailable(`${res.status} ${errorMessage(raw)}`);
     const wait = Number(res.headers.get("retry-after")) * 1000 || 2000 * 2 ** attempt;
@@ -150,21 +179,21 @@ async function chatWithModel(
 }
 
 /**
- * One chat completion with tool calling. Tries the configured model first; if it can't
- * answer, moves to the next fallback model and keeps using it for the rest of the run.
+ * One chat completion with tool calling. Tries the chain in order; a model that can't
+ * answer is skipped for the rest of the run, so the conversation continues on the next one.
  */
 export async function chat(cfg: LlmConfig, messages: ChatMessage[], tools?: ToolDef[]): Promise<ChatMessage> {
-  const models = cfg.models.filter((m) => !unavailable.has(m));
-  if (!models.length) throw new Error(`${cfg.provider}: no model available (tried ${cfg.models.join(", ")})`);
-  for (const [i, model] of models.entries()) {
+  const models = cfg.chain.filter((m) => !unavailable.has(modelLabel(m)));
+  if (!models.length) throw new Error(`no LLM available (tried ${cfg.chain.map(modelLabel).join(", ")})`);
+  for (const [i, ref] of models.entries()) {
     try {
-      return await chatWithModel(cfg, model, messages, tools);
+      return await chatWithModel(cfg, ref, messages, tools);
     } catch (e) {
-      const next = models[i + 1];
       if (!(e instanceof ModelUnavailable)) throw e;
-      unavailable.add(model);
-      if (!next) throw new Error(`${cfg.provider}: ${model} is unavailable (${e.message}) and no fallback is left`);
-      console.warn(`⚠️  ${model} is unavailable (${e.message.slice(0, 90)}), using ${next}`);
+      unavailable.add(modelLabel(ref));
+      const next = models[i + 1];
+      if (!next) throw new Error(`${modelLabel(ref)} is unavailable (${e.message}) and no fallback is left`);
+      console.warn(`⚠️  ${modelLabel(ref)} is unavailable (${e.message.slice(0, 90)}), using ${modelLabel(next)}`);
     }
   }
   throw new Error("unreachable");

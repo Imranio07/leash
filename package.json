@@ -5,7 +5,8 @@
   "workspaces": [
     "sdk",
     "services",
-    "agent"
+    "agent",
+    "app"
   ],
   "scripts": {
     "setup": "tsx scripts/setup.ts",
@@ -16,7 +17,9 @@
     "call": "tsx agent/src/manual.ts call",
     "budget": "tsx agent/src/manual.ts budget",
     "sync-idl": "cp target/idl/leash.json sdk/src/idl/leash.json && cp target/types/leash.ts sdk/src/idl/leash.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "app": "npm run dev --workspace app",
+    "app:build": "npm run build --workspace app"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

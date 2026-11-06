@@ -6,8 +6,26 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Keypair, PublicKey } from "@solana/web3.js";
 
-/** Repo root (this file is sdk/src/config.ts). */
-export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+/**
+ * Repo root: the directory holding Anchor.toml. Checked in this order: LEASH_ROOT,
+ * the location of this file (sdk/src/config.ts; a bundler may have moved it), then upwards
+ * from the working directory.
+ */
+function findRoot(): string {
+  const fromEnv = process.env.LEASH_ROOT;
+  const hasAnchorToml = (dir: string) => existsSync(resolve(dir, "Anchor.toml"));
+  if (fromEnv && hasAnchorToml(fromEnv)) return resolve(fromEnv);
+  const starts = [resolve(dirname(fileURLToPath(import.meta.url)), "../.."), process.cwd()];
+  for (const start of starts) {
+    for (let dir = start; ; dir = dirname(dir)) {
+      if (hasAnchorToml(dir)) return dir;
+      if (dirname(dir) === dir) break;
+    }
+  }
+  throw new Error("Leash repo root not found (no Anchor.toml above the working directory). Set LEASH_ROOT.");
+}
+
+export const ROOT = findRoot();
 const ENV_PATH = resolve(ROOT, ".env");
 
 let envLoaded = false;

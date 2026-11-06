@@ -3,7 +3,7 @@
 //   npm run agent -- "Get the weather in Bishkek and translate the summary into Kyrgyz."
 
 import { inspect } from "node:util";
-import { chat, llmConfigFromEnv, type ChatMessage, type ToolDef } from "@leash/sdk/node";
+import { chat, llmConfigFromEnv, modelLabel, type ChatMessage, type ToolDef } from "@leash/sdk/node";
 import { callPaidService, createContext, getBudget, listServices, sendPayment, type AgentContext } from "./tools";
 import { bold, cyan, detail, dim, red, say, short } from "./ui";
 
@@ -115,7 +115,7 @@ async function main() {
   const hash = Buffer.from(ctx.intentHash).toString("hex");
 
   say("🧑", bold(task));
-  detail(dim(`agent ${short(ctx.agent.publicKey)} · vault ${short(ctx.vault)} · ${llm.provider}/${llm.models[0]} · intent ${hash.slice(0, 12)}…`));
+  detail(dim(`agent ${short(ctx.agent.publicKey)} · vault ${short(ctx.vault)} · ${modelLabel(llm.chain[0]!)} · intent ${hash.slice(0, 12)}…`));
 
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
