@@ -27,7 +27,7 @@ function Screen() {
     refreshBalances();
     vault.refresh();
   };
-  const { keys, error: keysError } = useKeys();
+  const { keys, error: keysError, reload: reloadKeys } = useKeys();
   const vault = useVault(publicKey, keys?.agent ?? null);
 
   return (
@@ -70,13 +70,22 @@ function Screen() {
               keys={keys}
               vaultAddress={vault.address}
               balances={balances}
-              onCreated={refreshAll}
+              onCreated={() => {
+                refreshAll();
+                reloadKeys();
+              }}
             />
           )}
 
           {publicKey && vault.address && vault.view.state && (
             <>
-              <VaultCard address={vault.address} state={vault.view.state} balance={vault.view.balance} />
+              <VaultCard
+                address={vault.address}
+                state={vault.view.state}
+                balance={vault.view.balance}
+                keys={keys}
+                onCliChanged={reloadKeys}
+              />
               <div className="card">
                 <DepositForm
                   program={vault.program}
