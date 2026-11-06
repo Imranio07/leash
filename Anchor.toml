@@ -9,6 +9,9 @@ skip-lint = false
 [programs.localnet]
 leash = "3Szo7yDv7saKcXDuYA3BCgRV8YrajNFNCxU3c1WRAHu6"
 
+[programs.devnet]
+leash = "3Szo7yDv7saKcXDuYA3BCgRV8YrajNFNCxU3c1WRAHu6"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
