@@ -74,6 +74,7 @@ function Screen() {
 
           {publicKey && keys && vault.address && vault.view.loaded && !vault.view.state && (
             <CreateVaultForm
+              key={vault.address.toBase58()}
               program={vault.program}
               keys={keys}
               vaultAddress={vault.address}
@@ -104,6 +105,7 @@ function Screen() {
                 />
               </div>
               <OwnerActions
+                key={vault.address.toBase58()}
                 program={vault.program}
                 vaultAddress={vault.address}
                 state={vault.view.state}

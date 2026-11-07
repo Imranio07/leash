@@ -80,38 +80,41 @@ export interface Keys {
   cliVault: string | null;
 }
 
-/** Public keys from the server (agent, service wallets). Never includes private keys. */
+/**
+ * Public keys from the server (agent, service wallets, attacker). Never includes private keys.
+ * Re-read every few seconds, so `npm run fresh` shows up without reloading the page.
+ */
 export function useKeys() {
   const [keys, setKeys] = useState<Keys | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/keys")
-      .then(async (r) => {
-        const data = (await r.json()) as {
-          agent?: string;
-          services?: Record<string, string>;
-          attacker?: string;
-          cliVault?: string | null;
-          error?: string;
-        };
-        if (!alive) return;
-        if (!r.ok || !data.agent) throw new Error(data.error ?? `HTTP ${r.status}`);
-        setKeys({
-          agent: new PublicKey(data.agent),
-          services: Object.fromEntries(Object.entries(data.services ?? {}).map(([k, v]) => [k, new PublicKey(v)])),
-          attacker: data.attacker ? new PublicKey(data.attacker) : null,
-          cliVault: data.cliVault ?? null,
-        });
-        setError(null);
-      })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
-    return () => {
-      alive = false;
+  const last = useRef<string>("");
+
+  const reload = usePolling(async () => {
+    const r = await fetch("/api/keys", { cache: "no-store" });
+    const text = await r.text();
+    const data = JSON.parse(text) as {
+      agent?: string;
+      services?: Record<string, string>;
+      attacker?: string;
+      cliVault?: string | null;
+      error?: string;
     };
-  }, [tick]);
-  return { keys, error, reload: () => setTick((t) => t + 1) };
+    if (!r.ok || !data.agent) {
+      setError(data.error ?? `HTTP ${r.status}`);
+      return;
+    }
+    setError(null);
+    if (text === last.current) return; // unchanged: keep the same objects
+    last.current = text;
+    setKeys({
+      agent: new PublicKey(data.agent),
+      services: Object.fromEntries(Object.entries(data.services ?? {}).map(([k, v]) => [k, new PublicKey(v)])),
+      attacker: data.attacker ? new PublicKey(data.attacker) : null,
+      cliVault: data.cliVault ?? null,
+    });
+  }, [], 5000);
+
+  return { keys, error, reload };
 }
 
 export interface VaultView {

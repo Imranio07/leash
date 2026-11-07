@@ -65,6 +65,8 @@ Without the LLM (same on-chain path): `npm run call -- weather Bishkek`, `npm ru
 Owner commands: `npm run owner -- status | revoke | deposit <amount> | withdraw [amount|all]`.
 After a revoke, `npm run setup -- --new-agent` creates a fresh agent key and vault.
 
+**Fresh vault from the dashboard:** `npm run fresh` creates a new agent key (the old one is archived in `keys/`), makes sure the service and attacker wallets exist, gives the agent 0.05 SOL for fees and clears `LEASH_VAULT`. Within a few seconds the dashboard shows "Create a vault" for the new agent; creating it with Phantom also points the CLI agent at it. No file edits, no restarts. It refuses to run while the current vault still holds USDC (withdraw first, or pass `-- --force`).
+
 The Gemini free tier allows about 20 requests per day per model. The agent starts with `gemini-3.8-flash` and moves to `gemini-3.5-flash`, then `gemini-3.5-flash-lite`, when a model is out of quota, overloaded or not answering (`LLM_MODEL`, `LLM_FALLBACK_MODELS` in `.env`).
 
 Secrets stay out of git: `.env`, `keys/` (agent and service keys) and `logs/` are gitignored.

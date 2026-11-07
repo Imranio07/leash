@@ -19,7 +19,9 @@
     "sync-idl": "cp target/idl/leash.json sdk/src/idl/leash.json && cp target/types/leash.ts sdk/src/idl/leash.ts",
     "typecheck": "tsc --noEmit -p .",
     "app": "npm run dev --workspace app",
-    "app:build": "npm run build --workspace app"
+    "app:build": "npm run build --workspace app",
+    "fresh": "tsx scripts/fresh.ts",
+    "demo": "tsx scripts/demo.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
