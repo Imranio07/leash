@@ -41,6 +41,7 @@ On top of the program:
 
 - **Paid APIs** in HTTP-402 style: the service answers `402 {price, recipient}`, the agent pays through Leash, retries with the transaction signature, and the service checks the payment on-chain before serving the data.
 - **An LLM agent** (Groq gpt-oss-120b or Gemini) with tools: `get_budget`, `list_services`, `call_paid_service`, `send_payment`. It never checks limits itself; the vault does.
+- **An MCP server** with `pay_for_api(service, params)`, so any MCP-capable agent can spend through a Leash vault under the same rules.
 - **A dashboard** (Next.js + Phantom) where the owner creates and funds the vault, watches every payment and rejection live from the chain, and hits a big red Revoke button. The agent console sits on the same screen.
 
 ## Why Solana
@@ -96,6 +97,7 @@ sequenceDiagram
 | `agent/` | LLM agent with payment tools, plus `pay` / `call` commands without the LLM |
 | `app/` | Next.js dashboard with Phantom |
 | `scripts/` | `setup`, `fresh`, `demo`, `owner` |
+| `mcp/` | MCP server: `pay_for_api(service, params)` for any MCP-capable agent |
 
 ## Program rules and errors
 
@@ -214,6 +216,19 @@ npm run call -- weather Bishkek
 npm run owner -- status | revoke | deposit <amount> | withdraw [amount|all]
 ```
 
+**MCP server:** any MCP-capable agent (Claude Desktop, Claude Code, Cursor, …) can pay for APIs through the vault in `LEASH_VAULT`, with the same on-chain rules. Tools: `pay_for_api(service, params)`, `list_services()`, `get_budget()`.
+
+```sh
+npm run mcp                                       # stdio; logs go to stderr
+claude mcp add leash -- node "$PWD/node_modules/tsx/dist/cli.mjs" "$PWD/mcp/src/server.ts"
+```
+
+For Claude Desktop, add to `claude_desktop_config.json`:
+
+```json
+{ "mcpServers": { "leash": { "command": "node", "args": ["/path/to/leash/node_modules/tsx/dist/cli.mjs", "/path/to/leash/mcp/src/server.ts"] } } }
+```
+
 **LLM:** models are tried along `LLM_CHAIN` (default: Groq `openai/gpt-oss-120b`, then Gemini 3.8 Flash, 3.5 Flash, Groq `gpt-oss-20b`, Gemini 3.5 Flash-Lite). A model that is slow (>10 s), rate-limited, out of quota or writes a tool call as text is skipped. Demo presets list the payment they expect; if no model attempts it, the agent makes it directly with its key and labels it **direct**, so the program's verdict always shows.
 
 Secrets stay out of git: `.env`, `keys/` and `logs/` are gitignored.
@@ -224,9 +239,8 @@ Secrets stay out of git: `.env`, `keys/` and `logs/` are gitignored.
 - **x402 compatibility** and binding each payment to the 402 nonce (memo or `intent_hash`), so services don't need off-chain replay tracking.
 - **Richer policies:** per-recipient limits, rolling 24-hour windows, spending categories, time-of-day rules.
 - **Owner as a multisig** (e.g. Squads), several agents per vault, and un-revoke via policy rotation.
-- **MCP server** exposing `pay_for_api(service, params)`, so any MCP-capable agent can spend through a Leash vault.
 - **Alerts** to the owner (Telegram, email) when the agent hits a limit or a rejection spike.
 
 ## Built with
 
-Solana · Anchor 1.1.2 (Rust) · SPL Token (`transfer_checked`) · LiteSVM · TypeScript · `@anchor-lang/core` · `@solana/web3.js` · Next.js 16 · Tailwind CSS 4 · Solana Wallet Adapter (Phantom) · Groq (gpt-oss-120b) · Google Gemini · Open-Meteo · built with help from Claude Code.
+Solana · Anchor 1.1.2 (Rust) · SPL Token (`transfer_checked`) · LiteSVM · TypeScript · `@anchor-lang/core` · `@solana/web3.js` · Next.js 16 · Tailwind CSS 4 · Solana Wallet Adapter (Phantom) · Model Context Protocol SDK · Groq (gpt-oss-120b) · Google Gemini · Open-Meteo · built with help from Claude Code.

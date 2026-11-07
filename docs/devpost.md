@@ -41,6 +41,7 @@ The dashboard shows the owner's side (Phantom) and the agent console on one scre
 - The prompt-injection scene: the agent *is* fooled, and it still can't lose the owner's money to the attacker.
 - An honest security model: we document what the program guarantees and what it doesn't (allowlisted services are trusted up to the caps, the UTC-day window, `intent_hash` is an audit trail rather than a proof).
 - `npm run demo` reproduces the whole scenario with one command and checks each step against the expected result.
+- An MCP server with `pay_for_api(service, params)`: any MCP-capable agent can spend through a Leash vault under the same on-chain rules.
 
 ## What we learned
 
@@ -54,9 +55,8 @@ The dashboard shows the owner's side (Phantom) and the agent console on one scre
 - Mainnet with Circle USDC, after a security review.
 - x402 compatibility, with payments bound to the 402 nonce.
 - Richer policies: per-recipient limits, rolling windows, categories; a multisig owner (Squads); several agents per vault.
-- An MCP server (`pay_for_api`) so any MCP-capable agent can spend through a Leash vault.
 - Owner alerts when the agent hits limits.
 
 ## Built with
 
-solana · anchor · rust · spl-token · litesvm · typescript · next.js · tailwindcss · solana-wallet-adapter · phantom · groq · gemini · open-meteo · claude-code
+solana · anchor · rust · spl-token · litesvm · typescript · next.js · tailwindcss · solana-wallet-adapter · phantom · model-context-protocol · groq · gemini · open-meteo · claude-code

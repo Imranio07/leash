@@ -6,7 +6,8 @@
     "sdk",
     "services",
     "agent",
-    "app"
+    "app",
+    "mcp"
   ],
   "scripts": {
     "setup": "tsx scripts/setup.ts",
@@ -21,7 +22,8 @@
     "app": "npm run dev --workspace app",
     "app:build": "npm run build --workspace app",
     "fresh": "tsx scripts/fresh.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "mcp": "tsx mcp/src/server.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
