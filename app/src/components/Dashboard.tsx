@@ -1,8 +1,8 @@
 "use client";
 
-import { explorerAddress } from "@leash/sdk";
+import { explorerAddress, rpcHost } from "@leash/sdk";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { PROGRAM_ID, short, USDC_MINT } from "@/lib/config";
+import { PROGRAM_ID, RPC_URL, short, USDC_MINT } from "@/lib/config";
 import { useActivity } from "@/lib/activity";
 import { useBalances, useIsDevnet, useKeys, useVault } from "@/lib/hooks";
 import ActivityLog from "./ActivityLog";
@@ -49,8 +49,11 @@ function Screen() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300">
-            devnet
+          <span
+            className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300"
+            title={`RPC: ${rpcHost(RPC_URL)}`}
+          >
+            devnet · {rpcHost(RPC_URL)}
           </span>
           <a className="mono link" href={explorerAddress(PROGRAM_ID)} target="_blank" rel="noreferrer">
             program {short(PROGRAM_ID)}

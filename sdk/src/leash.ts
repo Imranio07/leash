@@ -44,6 +44,15 @@ export function rpcConnection(url: string): Connection {
   return new Connection(url, { commitment: "confirmed", disableRetryOnRateLimit: true });
 }
 
+/** The RPC's host name only, safe to print (API keys live in the path or query). */
+export function rpcHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "invalid RPC_URL";
+  }
+}
+
 export function explorerTx(signature: string): string {
   return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }

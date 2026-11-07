@@ -11,7 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { formatUsdc, LEASH_PROGRAM_ID, parseUsdc, rpcConnection, verifyPayment } from "@leash/sdk";
+import { formatUsdc, LEASH_PROGRAM_ID, parseUsdc, rpcConnection, rpcHost, verifyPayment } from "@leash/sdk";
 import {
   ATTACKER_KEY_PATH,
   chat,
@@ -328,5 +328,5 @@ server.listen(cfg.servicesPort, () => {
   console.log(`  weather   → ${SERVICES.weather.wallet().toBase58()}`);
   console.log(`  translate → ${SERVICES.translate.wallet().toBase58()}${llm ? "" : "  (disabled: no LLM key)"}`);
   console.log(`  news      → ${SERVICES.news.wallet().toBase58()}  (simulated prompt injection)`);
-  console.log(`  mint ${mint.toBase58()}`);
+  console.log(`  mint ${mint.toBase58()} · rpc ${rpcHost(cfg.rpcUrl)}`);
 });

@@ -9,6 +9,7 @@
 
 import { PublicKey } from "@solana/web3.js";
 import { chat, currentModel, llmConfigFromEnv, modelLabel, type ChatMessage, type ToolDef } from "@leash/sdk/node";
+import { rpcHost } from "@leash/sdk";
 import { callPaidService, getBudget, listServices, sendPayment, type AgentContext } from "./tools";
 import { bold, cyan, detail, dim, red, say, short, yellow } from "./ui";
 
@@ -141,7 +142,7 @@ export async function runAgent(ctx: AgentContext, task: string, opts: RunOptions
   const model = llm ? currentModel(llm) : null;
   detail(
     dim(
-      `agent ${short(ctx.agent.publicKey)} · vault ${short(ctx.vault)} · ${model ? modelLabel(model) : "no model"} · intent ${hash.slice(0, 12)}…`,
+      `agent ${short(ctx.agent.publicKey)} · vault ${short(ctx.vault)} · ${model ? modelLabel(model) : "no model"} · rpc ${rpcHost(ctx.connection.rpcEndpoint)} · intent ${hash.slice(0, 12)}…`,
     ),
   );
   if (opts.compromised) {
