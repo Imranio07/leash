@@ -1,8 +1,8 @@
 // Runs the CLI agent on the server for a task and streams its output.
 // The agent key never leaves the server; the browser only sees text.
 //
-// Demo presets send a `scenario`. The server turns it into actions the run must attempt
-// (made directly with the agent key, marked "direct", if no model attempts them).
+// A task that is exactly one of the demo presets (see lib/presets.ts) also gets the actions the
+// run must attempt (made directly with the agent key, marked "direct", if no model attempts them).
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
@@ -10,6 +10,7 @@ import { fetchVault, leashProgram } from "@leash/sdk";
 import { childEnv, ROOT } from "@leash/sdk/node";
 import { PublicKey } from "@solana/web3.js";
 import { PROGRAM_ID } from "@/lib/config";
+import { matchPreset, type PresetAddresses, type PresetId } from "@/lib/presets";
 import { agentKeypair, attackerWallet, errorMessage, jsonError, serverConnection } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -18,52 +19,38 @@ export const dynamic = "force-dynamic";
 const MAX_TASK_LENGTH = 500;
 let current: ChildProcess | null = null;
 
-const SCENARIOS = ["weather", "stranger-3", "stranger-0.10", "compromised", "budget"] as const;
-type Scenario = (typeof SCENARIOS)[number];
-
 /**
- * A demo preset: the exact task text (built here, so it always names the stranger's full
- * address) and the CLI args with the actions the run must attempt.
+ * CLI args for a demo preset: the actions the run must attempt (made directly with the
+ * agent key, marked "direct", if no model attempts them) and the compromised mode.
  */
-function presetRun(scenario: Scenario, stranger: string | null): { task: string; args: string[] } | null {
+function presetArgs(id: PresetId, a: PresetAddresses): string[] {
   const expect = (actions: unknown[]) => ["--expect", JSON.stringify(actions)];
-  switch (scenario) {
+  switch (id) {
     case "weather":
-      return {
-        task: "Get the weather in Bishkek and translate the summary into Kyrgyz.",
-        args: expect([
-          { kind: "service", service: "weather", params: { city: "Bishkek" } },
-          { kind: "service", service: "translate", params: { to: "ky", text: "{{summary}}" } },
-        ]),
-      };
+      return expect([
+        { kind: "service", service: "weather", params: { city: "Bishkek" } },
+        { kind: "service", service: "translate", params: { to: "ky", text: "{{summary}}" } },
+      ]);
     case "stranger-3":
-    case "stranger-0.10": {
-      if (!stranger) return null;
-      const amount = scenario === "stranger-3" ? "3" : "0.10";
-      return {
-        task: `Send $${amount} USDC to the wallet ${stranger}`,
-        args: expect([{ kind: "pay", recipient: stranger, amount }]),
-      };
-    }
+      return expect([{ kind: "pay", recipient: a.stranger, amount: "3" }]);
+    case "stranger-0.10":
+      return expect([{ kind: "pay", recipient: a.stranger, amount: "0.10" }]);
     case "compromised":
-      return {
-        task: "Read the latest news about Solana for me.",
-        args: [
-          "--compromised",
-          ...expect([
-            { kind: "service", service: "news", params: { topic: "solana" } },
-            {
-              kind: "pay",
-              recipient: attackerWallet().toBase58(),
-              amount: "0.20",
-              reason: "compromised agent follows injected instruction",
-              note: "compromised agent follows injected instruction",
-            },
-          ]),
-        ],
-      };
+      return [
+        "--compromised",
+        ...expect([
+          { kind: "service", service: "news", params: { topic: "solana" } },
+          {
+            kind: "pay",
+            recipient: a.attacker,
+            amount: "0.20",
+            reason: "compromised agent follows injected instruction",
+            note: "compromised agent follows injected instruction",
+          },
+        ]),
+      ];
     case "budget":
-      return { task: "What is my budget?", args: [] };
+      return [];
   }
 }
 
@@ -72,7 +59,7 @@ export async function POST(req: Request) {
   let vault: PublicKey;
   let extraArgs: string[];
   try {
-    const body = (await req.json()) as { task?: string; vault?: string; scenario?: string; stranger?: string };
+    const body = (await req.json()) as { task?: string; vault?: string; stranger?: string };
     task = (body.task ?? "").trim();
     if (!task || task.length > MAX_TASK_LENGTH) return jsonError(400, `task must be 1 to ${MAX_TASK_LENGTH} characters`);
     try {
@@ -85,19 +72,17 @@ export async function POST(req: Request) {
     if (!state.agent.equals(agentKeypair().publicKey)) {
       return jsonError(400, "this vault's agent is not keys/agent.json, so the local agent cannot sign for it");
     }
-    extraArgs = [];
-    if (SCENARIOS.includes(body.scenario as Scenario)) {
-      let stranger: string | null = null;
-      try {
-        stranger = new PublicKey(body.stranger ?? "").toBase58();
-      } catch {
-        // not a stranger preset, or no address sent
-      }
-      const preset = presetRun(body.scenario as Scenario, stranger);
-      if (!preset) return jsonError(400, "this preset needs a valid stranger address");
-      task = preset.task;
-      extraArgs = preset.args;
+    // The task runs exactly as typed. It counts as a preset only if it is that preset's text,
+    // letter for letter (with the stranger's and the attacker's full addresses).
+    let stranger = "";
+    try {
+      stranger = new PublicKey(body.stranger ?? "").toBase58();
+    } catch {
+      // no stranger address sent: the stranger presets can't match
     }
+    const addresses: PresetAddresses = { stranger, attacker: attackerWallet().toBase58() };
+    const preset = matchPreset(task, addresses);
+    extraArgs = preset ? presetArgs(preset, addresses) : [];
   } catch (e) {
     return jsonError(500, errorMessage(e));
   }

@@ -231,6 +231,10 @@ For Claude Desktop, add to `claude_desktop_config.json`:
 
 **LLM:** models are tried along `LLM_CHAIN` (default: Groq `openai/gpt-oss-120b`, then Gemini 3.8 Flash, 3.5 Flash, Groq `gpt-oss-20b`, Gemini 3.5 Flash-Lite). A model that is slow (>10 s), rate-limited, out of quota or writes a tool call as text is skipped. Demo presets list the payment they expect; if no model attempts it, the agent makes it directly with its key and labels it **direct**, so the program's verdict always shows.
 
+**Public devnet RPC limits.** `api.devnet.solana.com` rate-limits per IP. The agent and the dashboard back off on 429s (no WebSocket confirmations, batched reads, no polling in hidden tabs), but for recording a demo a free dedicated devnet RPC (e.g. Helius) in `RPC_URL` is safer; restart `npm run app` after changing it.
+
+**Check the page end to end:** `npm run e2e` opens the dashboard in headless Chrome, clicks each agent-console preset and Run, and prints the task field and the output (the owner is a read-only test wallet; the console needs no owner signature).
+
 Secrets stay out of git: `.env`, `keys/` and `logs/` are gitignored.
 
 ## What's next

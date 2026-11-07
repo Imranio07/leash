@@ -35,6 +35,15 @@ export function vaultTokenAddress(vault: PublicKey, mint: PublicKey): PublicKey 
   return getAssociatedTokenAddressSync(mint, vault, true);
 }
 
+/**
+ * A connection that does not retry rate-limited calls on its own. web3.js retries every 429
+ * four times by default; with several clients on one IP that keeps the public devnet RPC
+ * throttled. Callers that must succeed use `withRpcRetry` instead.
+ */
+export function rpcConnection(url: string): Connection {
+  return new Connection(url, { commitment: "confirmed", disableRetryOnRateLimit: true });
+}
+
 export function explorerTx(signature: string): string {
   return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
@@ -67,8 +76,25 @@ export interface VaultState {
 }
 
 export async function fetchVault(program: LeashProgram, vault: PublicKey): Promise<VaultState | null> {
-  const v = await program.account.vault.fetchNullable(vault);
-  if (!v) return null;
+  const info = await withRpcRetry(() => program.provider.connection.getAccountInfo(vault, "confirmed"));
+  return info ? decodeVault(program, vault, info.data) : null;
+}
+
+/** Decodes raw vault account data (e.g. from a batched getMultipleAccountsInfo). */
+export function decodeVault(program: LeashProgram, vault: PublicKey, data: Uint8Array): VaultState {
+  const v = program.coder.accounts.decode<{
+    owner: PublicKey;
+    agent: PublicKey;
+    mint: PublicKey;
+    perTxMax: BN;
+    dailyCap: BN;
+    allowlist: PublicKey[];
+    allowlistLen: number;
+    expiresAt: BN;
+    spentToday: BN;
+    dayIndex: BN;
+    revoked: boolean;
+  }>("vault", Buffer.from(data));
   return {
     address: vault,
     owner: v.owner,
@@ -206,6 +232,24 @@ export interface SendResult {
   logs: string[];
 }
 
+export const isRateLimited = (e: unknown) =>
+  /429|Too many requests|rate limit/i.test(e instanceof Error ? e.message : String(e));
+
+/** Runs an RPC call, waiting 1, 2, 4, 8 s between attempts while the RPC answers 429. */
+export async function withRpcRetry<T>(fn: () => Promise<T>, tries = 5): Promise<T> {
+  let delay = 1000;
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRateLimited(e) || i >= tries - 1) throw e;
+      console.log(`   · devnet RPC is rate-limiting, retrying in ${delay / 1000}s`);
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 8000);
+    }
+  }
+}
+
 const IDL_ERRORS = new Map(idlJson.errors.map((e) => [e.code, e]));
 
 /** SPL Token errors that can surface through agent_pay's transfer (codes below Anchor's 100). */
@@ -240,15 +284,47 @@ export function decodeError(err: TransactionError | null, logs: string[]): Progr
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchLogs(connection: Connection, signature: string): Promise<string[]> {
-  for (let i = 0; i < 10; i++) {
-    const tx = await connection.getTransaction(signature, {
-      commitment: "confirmed",
-      maxSupportedTransactionVersion: 0,
-    });
+  for (let i = 0; i < 6; i++) {
+    const tx = await withRpcRetry(() =>
+      connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 }),
+    );
     if (tx) return tx.meta?.logMessages ?? [];
-    await sleep(1000);
+    await sleep(1500);
   }
   return [];
+}
+
+
+/**
+ * Waits for a transaction by polling its status over HTTP. Returns its error (null when it
+ * succeeded). Deliberately no WebSocket: web3.js reconnects its socket in a loop when the
+ * public devnet RPC throttles connections, which makes the throttling worse.
+ */
+export async function confirmSignature(
+  connection: Connection,
+  signature: string,
+  lastValidBlockHeight: number,
+  timeoutMs = 90_000,
+): Promise<TransactionError | null> {
+  const start = Date.now();
+  let delay = 700;
+  for (let i = 0; Date.now() - start < timeoutMs; i++) {
+    try {
+      const { value } = await connection.getSignatureStatuses([signature]);
+      const status = value[0];
+      if (status?.err) return status.err;
+      if (status && (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized")) return null;
+      if (i % 6 === 5 && (await connection.getBlockHeight("confirmed")) > lastValidBlockHeight) {
+        throw new Error(`transaction ${signature} expired before it was confirmed`);
+      }
+      delay = 700;
+    } catch (e) {
+      if (!isRateLimited(e)) throw e;
+      delay = Math.min(delay * 2, 5000); // throttled: back off
+    }
+    await sleep(delay);
+  }
+  throw new Error(`transaction ${signature} was not confirmed within ${timeoutMs / 1000}s`);
 }
 
 /**
@@ -262,32 +338,26 @@ export async function sendTx(
   signers: Signer[],
   opts: { skipPreflight?: boolean } = {},
 ): Promise<SendResult> {
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = await withRpcRetry(() => connection.getLatestBlockhash("confirmed"));
   const tx = new Transaction({ feePayer: signers[0]!.publicKey, blockhash, lastValidBlockHeight });
   tx.add(...instructions);
   tx.sign(...signers);
 
   let signature: string;
   try {
-    signature = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: opts.skipPreflight ?? false,
-      maxRetries: 5,
-    });
+    const raw = tx.serialize();
+    // Resending the same signed transaction is safe: it can land at most once.
+    signature = await withRpcRetry(() =>
+      connection.sendRawTransaction(raw, { skipPreflight: opts.skipPreflight ?? false, maxRetries: 5 }),
+    );
   } catch (e) {
+    if (isRateLimited(e)) throw e;
     // Preflight rejected it: nothing landed on-chain.
     const logs = (e as { logs?: string[] }).logs ?? [];
     return { signature: "", ok: false, error: decodeError(null, logs), logs };
   }
 
-  let err: TransactionError | null;
-  try {
-    err = (await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed")).value.err;
-  } catch (e) {
-    // web3.js returns an on-chain failure in `value.err` when it hears it over the websocket,
-    // but rejects with the raw TransactionError object when it finds it by polling.
-    if (e instanceof Error) throw e;
-    err = e as TransactionError;
-  }
+  const err = await confirmSignature(connection, signature, lastValidBlockHeight);
   if (!err) return { signature, ok: true, logs: [] };
   const logs = await fetchLogs(connection, signature);
   return { signature, ok: false, error: decodeError(err, logs), logs };

@@ -18,6 +18,8 @@ import {
   isLeashError,
   leashProgram,
   parseUsdc,
+  rpcConnection,
+  withRpcRetry,
   sendTx,
   spentToday,
   vaultTokenAddress,
@@ -45,7 +47,7 @@ export interface AgentContext {
  */
 export async function createContext(task: string, overrides: { agent?: Keypair; vault?: PublicKey } = {}): Promise<AgentContext> {
   const cfg = getConfig();
-  const connection = new Connection(cfg.rpcUrl, "confirmed");
+  const connection = rpcConnection(cfg.rpcUrl);
   const program = leashProgram(connection);
   const agent = overrides.agent ?? loadKeypair(cfg.agentKeypairPath);
   let vault = overrides.vault;
@@ -111,7 +113,17 @@ export async function pay(ctx: AgentContext, recipient: PublicKey, amount: bigin
       intentHash: ctx.intentHash,
     }),
   ];
-  const res = await sendTx(ctx.connection, instructions, [ctx.agent], { skipPreflight: true });
+  let res: Awaited<ReturnType<typeof sendTx>>;
+  try {
+    res = await sendTx(ctx.connection, instructions, [ctx.agent], { skipPreflight: true });
+  } catch (e) {
+    // Never reached the chain (RPC down or throttled): record it so the run can retry it.
+    const message = e instanceof Error ? e.message : String(e);
+    detail(red(`✗ not sent: ${message.split("\n")[0]!.slice(0, 140)}`));
+    const out: PaymentOutcome = { ok: false, amount_usdc: formatUsdc(amount), recipient: recipient.toBase58(), error: "RpcError", error_message: message.slice(0, 200) };
+    ctx.attempts.payments.push(out);
+    return out;
+  }
 
   const out: PaymentOutcome = { ok: res.ok, amount_usdc: formatUsdc(amount), recipient: recipient.toBase58() };
   if (res.signature) {
@@ -138,7 +150,7 @@ export async function pay(ctx: AgentContext, recipient: PublicKey, amount: bigin
 export async function getBudget(ctx: AgentContext) {
   const v = await fetchVault(ctx.program, ctx.vault);
   if (!v) throw new Error("vault not found");
-  const balance = (await getAccount(ctx.connection, vaultTokenAddress(ctx.vault, v.mint))).amount;
+  const balance = (await withRpcRetry(() => getAccount(ctx.connection, vaultTokenAddress(ctx.vault, v.mint)))).amount;
   const budget = {
     vault: ctx.vault.toBase58(),
     balance_usdc: formatUsdc(balance),
@@ -222,8 +234,19 @@ export async function callPaidService(
   if (!payment.ok) return { ok: false, service: svc.id, payment };
 
   detail(dim("retrying with X-Payment-Signature"));
-  res = await request({ "X-Payment-Signature": payment.signature! });
-  const data = await readBody(res);
+  let data: Record<string, unknown> = {};
+  for (let attempt = 0; ; attempt++) {
+    res = await request({ "X-Payment-Signature": payment.signature! });
+    data = await readBody(res);
+    // The payment is on-chain but the service could not verify it yet (RPC lag or throttling):
+    // the service releases the signature on failure, so asking again with it is safe.
+    if (res.status === 402 && data.error === "payment_invalid" && attempt < 2) {
+      detail(dim(`· the service could not verify the payment yet (${String(data.reason ?? "")}), asking again`));
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      continue;
+    }
+    break;
+  }
   detail(res.ok ? green(`✓ ${res.status} data received`) : red(`✗ ${res.status} ${String(data.error ?? "")} ${String(data.reason ?? "")}`));
   if (res.ok) {
     ctx.attempts.results[svc.id] = data;

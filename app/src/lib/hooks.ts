@@ -1,25 +1,48 @@
 "use client";
 
-import { fetchVault, leashProgram, vaultAddress, vaultTokenAddress, type LeashProgram, type VaultState } from "@leash/sdk";
+import { decodeVault, leashProgram, vaultAddress, vaultTokenAddress, type LeashProgram, type VaultState } from "@leash/sdk";
 import { useConnection } from "@solana/wallet-adapter-react";
-import { getAccount, getAssociatedTokenAddressSync, TokenAccountNotFoundError } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, unpackAccount } from "@solana/spl-token";
+import type { AccountInfo } from "@solana/web3.js";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEVNET_GENESIS_HASH, POLL_MS, PROGRAM_ID, USDC_MINT } from "./config";
 
-/** Runs `fn` now and every `ms`, with a manual `refresh()`. */
+/**
+ * Runs `fn` now and every `ms`, with a manual `refresh()`. Skips ticks while the tab is
+ * hidden: the public devnet RPC rate-limits per IP, and every open tab counts.
+ */
 export function usePolling(fn: () => Promise<void>, deps: unknown[], ms = POLL_MS) {
   const [tick, setTick] = useState(0);
   const fnRef = useRef(fn);
   fnRef.current = fn;
   useEffect(() => {
     let alive = true;
-    const run = () => fnRef.current().catch((e) => console.warn("poll failed", e));
+    // On a 429 from the RPC, wait longer before the next poll (up to 30 s).
+    let pauseUntil = 0;
+    let failures = 0;
+    const run = () => {
+      if (Date.now() < pauseUntil) return;
+      fnRef
+        .current()
+        .then(() => {
+          failures = 0;
+        })
+        .catch((e) => {
+          if (/429|Too many requests|rate limit/i.test(String(e))) {
+            failures++;
+            pauseUntil = Date.now() + Math.min(30_000, ms * 2 ** failures);
+          } else console.warn("poll failed", e);
+        });
+    };
     run();
-    const id = setInterval(() => alive && run(), ms);
+    const id = setInterval(() => alive && !document.hidden && run(), ms);
+    const onVisible = () => alive && !document.hidden && run();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick, ms]);
@@ -39,6 +62,15 @@ export function useIsDevnet(): boolean | null {
   return isDevnet;
 }
 
+function tokenAmount(address: PublicKey | null, info: AccountInfo<Buffer> | null | undefined): bigint | null {
+  if (!address || !info) return null;
+  try {
+    return unpackAccount(address, info, info.owner).amount;
+  } catch {
+    return null;
+  }
+}
+
 export interface Balances {
   sol: number | null;
   /** USDC base units; null when the wallet has no token account for the mint. */
@@ -56,16 +88,10 @@ export function useBalances(owner: PublicKey | null) {
       setBalances({ sol: null, usdc: null, loaded: false });
       return;
     }
-    const lamports = await connection.getBalance(owner, "confirmed");
-    let usdc: bigint | null = null;
-    if (USDC_MINT) {
-      try {
-        usdc = (await getAccount(connection, getAssociatedTokenAddressSync(USDC_MINT, owner, true), "confirmed")).amount;
-      } catch (e) {
-        if (!(e instanceof TokenAccountNotFoundError)) throw e;
-      }
-    }
-    setBalances({ sol: lamports / LAMPORTS_PER_SOL, usdc, loaded: true });
+    // One request for both: the wallet (SOL) and its USDC token account.
+    const ata = USDC_MINT ? getAssociatedTokenAddressSync(USDC_MINT, owner, true) : null;
+    const [wallet, token] = await connection.getMultipleAccountsInfo(ata ? [owner, ata] : [owner], "confirmed");
+    setBalances({ sol: (wallet?.lamports ?? 0) / LAMPORTS_PER_SOL, usdc: tokenAmount(ata, token), loaded: true });
   }, [owner?.toBase58(), connection]);
 
   return { balances, refresh };
@@ -139,14 +165,14 @@ export function useVault(owner: PublicKey | null, agent: PublicKey | null) {
       setView({ loaded: false, state: null, balance: 0n });
       return;
     }
-    const state = await fetchVault(program, address);
-    let balance = 0n;
-    if (state) {
-      try {
-        balance = (await getAccount(connection, vaultTokenAddress(address, state.mint), "confirmed")).amount;
-      } catch (e) {
-        if (!(e instanceof TokenAccountNotFoundError)) throw e;
-      }
+    // One request for the vault and its token account (assuming the configured mint).
+    const guess = USDC_MINT ? vaultTokenAddress(address, USDC_MINT) : null;
+    const [vaultInfo, tokenInfo] = await connection.getMultipleAccountsInfo(guess ? [address, guess] : [address], "confirmed");
+    const state = vaultInfo ? decodeVault(program, address, vaultInfo.data) : null;
+    let balance = tokenAmount(guess, tokenInfo) ?? 0n;
+    if (state && (!USDC_MINT || !state.mint.equals(USDC_MINT))) {
+      const ata = vaultTokenAddress(address, state.mint);
+      balance = tokenAmount(ata, await connection.getAccountInfo(ata, "confirmed")) ?? 0n;
     }
     setView({ loaded: true, state, balance });
   }, [address?.toBase58(), program]);

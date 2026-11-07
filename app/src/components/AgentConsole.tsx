@@ -5,6 +5,7 @@
 import { Keypair, type PublicKey } from "@solana/web3.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { short } from "@/lib/config";
+import { matchPreset, presetTask, PRESETS, type PresetId } from "@/lib/presets";
 
 interface Props {
   /** Wallet of the prompt-injection attacker (from /api/keys), shown in the compromised preset. */
@@ -55,8 +56,6 @@ function Line({ text }: { text: string }) {
   );
 }
 
-type Scenario = "weather" | "stranger-3" | "stranger-0.10" | "compromised" | "budget";
-
 export default function AgentConsole({ attacker, vault, revoked, onFinished }: Props) {
   const [task, setTask] = useState("Get the weather in Bishkek and translate the summary into Kyrgyz.");
   const [lines, setLines] = useState<string[]>([]);
@@ -67,16 +66,12 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
   // A random wallet nobody controls, for the "send money to a stranger" demo steps.
   const stranger = useMemo(() => Keypair.generate().publicKey.toBase58(), []);
 
-  const presets: { id: Scenario; label: string; task: string; danger?: boolean }[] = [
-    { id: "weather", label: "Weather + translate", task: "Get the weather in Bishkek and translate the summary into Kyrgyz." },
-    { id: "stranger-3", label: "Send $3 to a stranger", task: `Send $3 USDC to the wallet ${stranger}` },
-    { id: "stranger-0.10", label: "Send $0.10 to a stranger", task: `Send $0.10 USDC to the wallet ${stranger}` },
-    { id: "compromised", label: "☠ Compromised agent: read the news", task: "Read the latest news about Solana for me.", danger: true },
-    { id: "budget", label: "Budget", task: "What is my budget?" },
-  ];
-  // The clicked preset, until the text is edited by hand. The server rebuilds the preset's
-  // exact task (with the stranger's full address) and its expected actions.
-  const [scenario, setScenario] = useState<Scenario | null>("weather");
+  // Full addresses for the preset texts. The attacker comes from the server (/api/keys).
+  const addresses = { stranger, attacker: attacker?.toBase58() ?? "" };
+  // Run sends exactly the text in the field. It counts as a preset only while it is that
+  // preset's text, letter for letter; the server checks the same way.
+  const active: PresetId | null = matchPreset(task, addresses);
+  const activePreset = PRESETS.find((p) => p.id === active) ?? null;
 
   useEffect(() => {
     let alive = true;
@@ -107,7 +102,7 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
       const res = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, vault: vault.toBase58(), scenario, stranger }),
+        body: JSON.stringify({ task, vault: vault.toBase58(), stranger }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -156,11 +151,11 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {presets.map((p) => (
+        {PRESETS.map((p) => (
           <button
             key={p.id}
             className={`rounded-full border px-3 py-1 text-xs transition ${
-              scenario === p.id
+              active === p.id
                 ? p.danger
                   ? "border-red-500 text-red-300"
                   : "border-emerald-500 text-emerald-300"
@@ -168,11 +163,9 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
                   ? "border-red-900 text-red-300/80 hover:border-red-600"
                   : "border-zinc-700 text-zinc-300 hover:border-zinc-500"
             }`}
-            onClick={() => {
-              setTask(p.task);
-              setScenario(p.id);
-            }}
-            disabled={running}
+            onClick={() => setTask(presetTask(p.id, addresses))}
+            disabled={running || (p.id === "compromised" && !attacker)}
+            title={presetTask(p.id, addresses)}
           >
             {p.label}
           </button>
@@ -187,12 +180,12 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
         }}
       >
         <input
-          className="input flex-1"
+          className="input flex-1 text-sm"
+          name="agent-task"
+          autoComplete="off"
+          spellCheck={false}
           value={task}
-          onChange={(e) => {
-            setTask(e.target.value);
-            setScenario(null);
-          }}
+          onChange={(e) => setTask(e.target.value)}
           placeholder="Tell the agent what to do…"
           disabled={running}
         />
@@ -206,14 +199,21 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
           </button>
         )}
       </form>
+      {task.trim() && (
+        <p className={`mt-2 text-xs ${activePreset ? (activePreset.danger ? "text-red-300" : "text-emerald-300") : "text-zinc-500"}`}>
+          {activePreset
+            ? `Preset: ${activePreset.label} · expected: ${activePreset.expected}`
+            : "Free-form task: no preset checks, the agent decides on its own."}
+        </p>
+      )}
       {!vault && <p className="mt-2 text-sm text-zinc-500">Create a vault first.</p>}
-      {scenario === "compromised" && (
+      {active === "compromised" && (
         <p className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           Simulation of a hijacked agent: it blindly obeys instructions inside service responses. The news service hides
           one that says to pay {attacker ? <span className="mono">{short(attacker)}</span> : "an attacker"}.
         </p>
       )}
-      {(scenario === "stranger-3" || scenario === "stranger-0.10") && (
+      {(active === "stranger-3" || active === "stranger-0.10") && (
         <p className="mt-2 text-xs text-zinc-500">
           Stranger: <span className="mono">{stranger}</span> (random wallet, not on the allowlist)
         </p>

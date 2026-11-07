@@ -4,9 +4,12 @@
 import { ATTACKER_KEY_PATH, getConfig, loadKeypair, loadOrCreateKeypair, SERVICE_KEY_PATHS } from "@leash/sdk/node";
 import { Connection, type Keypair, type PublicKey } from "@solana/web3.js";
 import { NextResponse } from "next/server";
+import { rpcConnection } from "@leash/sdk";
 import { DEVNET_GENESIS_HASH } from "./config";
 
-export const serverConnection = () => new Connection(getConfig().rpcUrl, "confirmed");
+let connection: Connection | null = null;
+/** One shared connection (one keep-alive pool), without web3.js's own 429 retries. */
+export const serverConnection = () => (connection ??= rpcConnection(getConfig().rpcUrl));
 
 export function jsonError(status: number, error: string) {
   return NextResponse.json({ error }, { status });

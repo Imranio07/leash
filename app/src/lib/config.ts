@@ -15,7 +15,7 @@ export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
 export const CIRCLE_DEVNET_USDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 /** How often the dashboard re-reads the chain. */
-export const POLL_MS = 4000;
+export const POLL_MS = 5000;
 
 export const short = (key: PublicKey | string, n = 4) => {
   const s = key.toString();

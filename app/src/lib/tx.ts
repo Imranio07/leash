@@ -2,7 +2,7 @@
 
 // Sends owner transactions through the connected wallet and turns failures into readable messages.
 
-import { decodeError } from "@leash/sdk";
+import { confirmSignature, decodeError } from "@leash/sdk";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
 import { Transaction, type Connection, type TransactionError, type TransactionInstruction } from "@solana/web3.js";
 
@@ -45,13 +45,11 @@ export async function sendOwnerTx(
     throw new TxError(walletErrorMessage(e));
   }
 
-  let err: TransactionError | null = null;
+  let err: TransactionError | null;
   try {
-    err = (await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed")).value.err;
+    err = await confirmSignature(connection, signature, lastValidBlockHeight);
   } catch (e) {
-    // web3.js rejects with the raw TransactionError when it finds the failure by polling.
-    if (e instanceof Error) throw new TxError(e.message, signature);
-    err = e as TransactionError;
+    throw new TxError(e instanceof Error ? e.message : String(e), signature);
   }
   if (err) {
     const info = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });

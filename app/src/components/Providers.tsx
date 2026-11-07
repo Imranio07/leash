@@ -13,7 +13,8 @@ export default function Providers({ children }: { children: ReactNode }) {
   // Phantom registers itself through the Wallet Standard, so no adapter list is needed.
   const wallets = useMemo(() => [], []);
   return (
-    <ConnectionProvider endpoint={RPC_URL} config={{ commitment: "confirmed" }}>
+    // No automatic 429 retries: pollers back off on their own (see usePolling).
+    <ConnectionProvider endpoint={RPC_URL} config={{ commitment: "confirmed", disableRetryOnRateLimit: true }}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>

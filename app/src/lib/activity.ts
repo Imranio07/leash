@@ -12,7 +12,7 @@ import { usePolling } from "./hooks";
 const MAX_SIGNATURES = 30;
 const MAX_FETCH_TRIES = 5;
 /** The public devnet RPC rate-limits batched transaction lookups, so decode a few per tick, newest first. */
-const FETCH_PER_TICK = 4;
+const FETCH_PER_TICK = 3;
 
 interface Pending {
   slot: number;

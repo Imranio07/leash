@@ -11,7 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { formatUsdc, LEASH_PROGRAM_ID, parseUsdc, verifyPayment } from "@leash/sdk";
+import { formatUsdc, LEASH_PROGRAM_ID, parseUsdc, rpcConnection, verifyPayment } from "@leash/sdk";
 import {
   ATTACKER_KEY_PATH,
   chat,
@@ -30,7 +30,7 @@ if (!cfg.mint) {
   process.exit(1);
 }
 const mint = cfg.mint;
-const connection = new Connection(cfg.rpcUrl, "confirmed");
+const connection = rpcConnection(cfg.rpcUrl);
 
 let llm: LlmConfig | null = null;
 try {

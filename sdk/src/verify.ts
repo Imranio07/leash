@@ -1,7 +1,7 @@
 // Server-side check that a transaction really paid us through Leash.
 
 import { Connection, PublicKey } from "@solana/web3.js";
-import { LEASH_PROGRAM_ID } from "./leash";
+import { isRateLimited, LEASH_PROGRAM_ID, withRpcRetry } from "./leash";
 
 export interface PaymentRequirement {
   mint: PublicKey;
@@ -30,13 +30,13 @@ export async function verifyPayment(
   let tx = null;
   try {
     for (let i = 0; i < 8 && !tx; i++) {
-      tx = await connection.getParsedTransaction(signature, {
-        commitment: "confirmed",
-        maxSupportedTransactionVersion: 0,
-      });
+      tx = await withRpcRetry(() =>
+        connection.getParsedTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 }),
+      );
       if (!tx) await sleep(1000);
     }
-  } catch {
+  } catch (e) {
+    if (isRateLimited(e)) return { ok: false, reason: "the Solana RPC is rate-limiting, try again" };
     return { ok: false, reason: "invalid transaction signature" };
   }
   if (!tx?.meta) return { ok: false, reason: "transaction not found or not confirmed" };

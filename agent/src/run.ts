@@ -246,14 +246,19 @@ export async function runAgent(ctx: AgentContext, task: string, opts: RunOptions
       const res = await callPaidService(ctx, exp.service, params, `${exp.service} service, direct`);
       lastData = ("data" in res && res.data ? res.data : {}) as Record<string, unknown>;
     }
-    if (exp.kind === "pay" && !ctx.attempts.payments.some((p) => p.recipient === exp.recipient)) {
+    if (exp.kind !== "pay") continue;
+    // Counts only attempts that reached the chain; a send that hit an RPC error is retried.
+    const tries = ctx.attempts.payments.filter((p) => p.recipient === exp.recipient);
+    if (!tries.some((p) => p.signature)) {
       direct++;
       say(
         "↪",
         yellow(
-          exp.note
-            ? `direct: ${exp.note} (send $${exp.amount} to ${short(exp.recipient)})`
-            : `direct: no model attempted the payment to ${short(exp.recipient)}, so the agent sends it itself`,
+          tries.length
+            ? `direct: the payment to ${short(exp.recipient)} did not reach the chain (RPC error), sending it again`
+            : exp.note
+              ? `direct: ${exp.note} (send $${exp.amount} to ${short(exp.recipient)})`
+              : `direct: no model attempted the payment to ${short(exp.recipient)}, so the agent sends it itself`,
         ),
       );
       await sendPayment(ctx, exp.recipient, exp.amount, `direct: ${exp.note ?? exp.reason ?? "expected payment"}`);

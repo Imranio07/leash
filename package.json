@@ -24,7 +24,8 @@
     "fresh": "tsx scripts/fresh.ts",
     "demo": "tsx scripts/demo.ts",
     "mcp": "tsx mcp/src/server.ts",
-    "token-metadata": "tsx scripts/token-metadata.ts"
+    "token-metadata": "tsx scripts/token-metadata.ts",
+    "e2e": "tsx scripts/e2e-console.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
