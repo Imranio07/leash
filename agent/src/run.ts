@@ -105,6 +105,8 @@ export type ExpectedAction =
 export interface RunOptions {
   /** Simulate an agent that obeys instructions found in service responses. */
   compromised?: boolean;
+  /** Skip the LLM: only the expected actions run, directly with the agent key. */
+  noLlm?: boolean;
   expect?: ExpectedAction[];
 }
 
@@ -126,10 +128,14 @@ export async function runAgent(ctx: AgentContext, task: string, opts: RunOptions
   say("🧑", bold(task));
 
   let llm: ReturnType<typeof llmConfigFromEnv> | null = null;
-  try {
-    llm = llmConfigFromEnv();
-  } catch (e) {
-    detail(dim(`· no LLM: ${e instanceof Error ? e.message : e}`));
+  if (opts.noLlm) {
+    detail(dim("· LLM disabled (--no-llm): expected actions run directly with the agent key"));
+  } else {
+    try {
+      llm = llmConfigFromEnv();
+    } catch (e) {
+      detail(dim(`· no LLM: ${e instanceof Error ? e.message : e}`));
+    }
   }
   const model = llm ? currentModel(llm) : null;
   detail(
@@ -227,11 +233,19 @@ export async function runAgent(ctx: AgentContext, task: string, opts: RunOptions
 
   // Make any expected action the model never attempted, straight from the agent key.
   let direct = 0;
+  let lastData: Record<string, unknown> = {};
   for (const exp of opts.expect ?? []) {
     if (exp.kind === "service" && !ctx.attempts.services.includes(exp.service)) {
       direct++;
       say("↪", yellow(`direct: no model called the ${exp.service} service, so the agent calls it itself`));
-      const res = await callPaidService(ctx, exp.service, exp.params, `${exp.service} service, direct`);
+      // "{{summary}}" in a param is replaced with the previous direct call's summary (weather → translate).
+      const params = Object.fromEntries(
+        Object.entries(exp.params).map(([k, v]) => [k, v.replace("{{summary}}", String(lastData.summary ?? "Weather in Bishkek"))]),
+      );
+      const res = await callPaidService(ctx, exp.service, params, `${exp.service} service, direct`);
+      lastData = ("data" in res && res.data ? res.data : {}) as Record<string, unknown>;
+      if (lastData.translation) detail(String(lastData.translation));
+      else if (lastData.summary) detail(String(lastData.summary));
       const injected = JSON.stringify("data" in res ? res.data : {}).match(/send \$([\d.]+) to ([1-9A-HJ-NP-Za-km-z]{32,44})/);
       if (opts.compromised && injected) detail(yellow(`instruction found in the response: send $${injected[1]} to ${short(injected[2]!)}`));
     }
