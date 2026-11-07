@@ -148,7 +148,7 @@ Amounts are integers in base units everywhere (USDC has 6 decimals: $0.05 = `50_
 - **Services verify payments off-chain** through RPC. Replay protection is an in-memory set of used signatures plus a 10-minute age limit, so a restarted service would accept a payment again within that window. Payments are not bound to the 402 `nonce`, and this is not x402-compatible.
 - **Revoke is permanent.** A new agent key means a new vault.
 - **Rejected payments land on-chain on purpose** (sent without preflight), so the agent pays a ~0.000005 SOL fee for each rejection.
-- **Hackathon-grade, not audited.** Devnet only, with our own 6-decimal test USDC mint (Circle devnet USDC works too via `USDC_MINT`). The program is upgradeable by the deployer key.
+- **Hackathon-grade, not audited.** Devnet only, with our own 6-decimal test USDC mint, named "Leash Test USDC" (tUSDC) through Metaplex metadata so wallets don't show it as unknown (`npm run token-metadata`). Circle devnet USDC works too via `USDC_MINT`. The program is upgradeable by the deployer key.
 - **Local demo shortcuts:** the dashboard server holds the agent key (to run the agent console) and uses the CLI owner key as the test-USDC faucet. The agent key never reaches the browser.
 - **The "compromised agent" is a simulation:** a system prompt that tells the agent to obey instructions found in service responses, and it is labeled as such everywhere.
 

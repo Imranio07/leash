@@ -1,0 +1,7 @@
+{
+  "name": "Leash Test USDC",
+  "symbol": "tUSDC",
+  "description": "Test stablecoin for the Leash hackathon demo on Solana devnet. 6 decimals, no value. Minted by the Leash dashboard faucet.",
+  "image": "https://raw.githubusercontent.com/Imranio07/leash/main/docs/token/tusdc.png",
+  "external_url": "https://github.com/Imranio07/leash"
+}

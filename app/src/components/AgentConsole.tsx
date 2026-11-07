@@ -27,7 +27,7 @@ function Line({ text }: { text: string }) {
   // Housekeeping (model switches, hints): small and gray.
   if (/^\s*·/.test(text)) return <div className="whitespace-pre-wrap break-words text-xs text-zinc-500">{text.trim()}</div>;
   const parts = text.split(URL_RE);
-  const tone = /^(↪|☠️)/.test(text)
+  const tone = /^(↪|☠️|⚠)/.test(text)
     ? "text-amber-200"
     : /✗|rejected|error|failed/i.test(text)
     ? "text-red-300"
@@ -74,8 +74,9 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
     { id: "compromised", label: "☠ Compromised agent: read the news", task: "Read the latest news about Solana for me.", danger: true },
     { id: "budget", label: "Budget", task: "What is my budget?" },
   ];
-  // A preset's scenario applies only while its text is unchanged.
-  const scenario = presets.find((p) => p.task === task)?.id ?? null;
+  // The clicked preset, until the text is edited by hand. The server rebuilds the preset's
+  // exact task (with the stranger's full address) and its expected actions.
+  const [scenario, setScenario] = useState<Scenario | null>("weather");
 
   useEffect(() => {
     let alive = true;
@@ -159,7 +160,7 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
           <button
             key={p.id}
             className={`rounded-full border px-3 py-1 text-xs transition ${
-              task === p.task
+              scenario === p.id
                 ? p.danger
                   ? "border-red-500 text-red-300"
                   : "border-emerald-500 text-emerald-300"
@@ -167,7 +168,10 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
                   ? "border-red-900 text-red-300/80 hover:border-red-600"
                   : "border-zinc-700 text-zinc-300 hover:border-zinc-500"
             }`}
-            onClick={() => setTask(p.task)}
+            onClick={() => {
+              setTask(p.task);
+              setScenario(p.id);
+            }}
             disabled={running}
           >
             {p.label}
@@ -185,7 +189,10 @@ export default function AgentConsole({ attacker, vault, revoked, onFinished }: P
         <input
           className="input flex-1"
           value={task}
-          onChange={(e) => setTask(e.target.value)}
+          onChange={(e) => {
+            setTask(e.target.value);
+            setScenario(null);
+          }}
           placeholder="Tell the agent what to do…"
           disabled={running}
         />

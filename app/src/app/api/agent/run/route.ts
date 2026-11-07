@@ -7,7 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
 import { fetchVault, leashProgram } from "@leash/sdk";
-import { ROOT } from "@leash/sdk/node";
+import { childEnv, ROOT } from "@leash/sdk/node";
 import { PublicKey } from "@solana/web3.js";
 import { PROGRAM_ID } from "@/lib/config";
 import { agentKeypair, attackerWallet, errorMessage, jsonError, serverConnection } from "@/lib/server";
@@ -18,30 +18,53 @@ export const dynamic = "force-dynamic";
 const MAX_TASK_LENGTH = 500;
 let current: ChildProcess | null = null;
 
-type Scenario = "stranger-3" | "stranger-0.10" | "compromised";
+const SCENARIOS = ["weather", "stranger-3", "stranger-0.10", "compromised", "budget"] as const;
+type Scenario = (typeof SCENARIOS)[number];
 
-/** Extra CLI args for a demo scenario, or [] for a free-form task. */
-function scenarioArgs(scenario: unknown, stranger: unknown, task: string): string[] {
-  if (scenario === "compromised") {
-    const expect = [
-      { kind: "service", service: "news", params: { topic: "solana" } },
-      { kind: "pay", recipient: attackerWallet().toBase58(), amount: "0.20", reason: "instruction injected by the news service" },
-    ];
-    return ["--compromised", "--expect", JSON.stringify(expect)];
-  }
-  if (scenario === "stranger-3" || scenario === "stranger-0.10") {
-    let address: string;
-    try {
-      address = new PublicKey(String(stranger)).toBase58();
-    } catch {
-      return [];
+/**
+ * A demo preset: the exact task text (built here, so it always names the stranger's full
+ * address) and the CLI args with the actions the run must attempt.
+ */
+function presetRun(scenario: Scenario, stranger: string | null): { task: string; args: string[] } | null {
+  const expect = (actions: unknown[]) => ["--expect", JSON.stringify(actions)];
+  switch (scenario) {
+    case "weather":
+      return {
+        task: "Get the weather in Bishkek and translate the summary into Kyrgyz.",
+        args: expect([
+          { kind: "service", service: "weather", params: { city: "Bishkek" } },
+          { kind: "service", service: "translate", params: { to: "ky", text: "{{summary}}" } },
+        ]),
+      };
+    case "stranger-3":
+    case "stranger-0.10": {
+      if (!stranger) return null;
+      const amount = scenario === "stranger-3" ? "3" : "0.10";
+      return {
+        task: `Send $${amount} USDC to the wallet ${stranger}`,
+        args: expect([{ kind: "pay", recipient: stranger, amount }]),
+      };
     }
-    // Only when the task still names that address (the user may have edited the text).
-    if (!task.includes(address)) return [];
-    const amount = (scenario as Scenario) === "stranger-3" ? "3" : "0.10";
-    return ["--expect", JSON.stringify([{ kind: "pay", recipient: address, amount }])];
+    case "compromised":
+      return {
+        task: "Read the latest news about Solana for me.",
+        args: [
+          "--compromised",
+          ...expect([
+            { kind: "service", service: "news", params: { topic: "solana" } },
+            {
+              kind: "pay",
+              recipient: attackerWallet().toBase58(),
+              amount: "0.20",
+              reason: "compromised agent follows injected instruction",
+              note: "compromised agent follows injected instruction",
+            },
+          ]),
+        ],
+      };
+    case "budget":
+      return { task: "What is my budget?", args: [] };
   }
-  return [];
 }
 
 export async function POST(req: Request) {
@@ -62,7 +85,19 @@ export async function POST(req: Request) {
     if (!state.agent.equals(agentKeypair().publicKey)) {
       return jsonError(400, "this vault's agent is not keys/agent.json, so the local agent cannot sign for it");
     }
-    extraArgs = scenarioArgs(body.scenario, body.stranger, task);
+    extraArgs = [];
+    if (SCENARIOS.includes(body.scenario as Scenario)) {
+      let stranger: string | null = null;
+      try {
+        stranger = new PublicKey(body.stranger ?? "").toBase58();
+      } catch {
+        // not a stranger preset, or no address sent
+      }
+      const preset = presetRun(body.scenario as Scenario, stranger);
+      if (!preset) return jsonError(400, "this preset needs a valid stranger address");
+      task = preset.task;
+      extraArgs = preset.args;
+    }
   } catch (e) {
     return jsonError(500, errorMessage(e));
   }
@@ -73,7 +108,8 @@ export async function POST(req: Request) {
     [resolve(ROOT, "node_modules/tsx/dist/cli.mjs"), resolve(ROOT, "agent/src/agent.ts"), ...extraArgs, task],
     {
       cwd: ROOT,
-      env: { ...process.env, LEASH_VAULT: vault.toBase58(), FORCE_COLOR: "0", NO_COLOR: "1" },
+      // The agent reads .env itself; only the vault on screen is passed explicitly.
+      env: childEnv({ LEASH_VAULT: vault.toBase58(), FORCE_COLOR: "0", NO_COLOR: "1" }),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );

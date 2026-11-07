@@ -23,7 +23,8 @@
     "app:build": "npm run build --workspace app",
     "fresh": "tsx scripts/fresh.ts",
     "demo": "tsx scripts/demo.ts",
-    "mcp": "tsx mcp/src/server.ts"
+    "mcp": "tsx mcp/src/server.ts",
+    "token-metadata": "tsx scripts/token-metadata.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

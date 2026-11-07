@@ -15,6 +15,7 @@ import {
   fetchVault,
   formatUsdc,
   intentHash,
+  isLeashError,
   leashProgram,
   parseUsdc,
   sendTx,
@@ -35,7 +36,7 @@ export interface AgentContext {
   /** sha256 of the user's task, recorded on-chain with every payment. */
   intentHash: Uint8Array;
   /** What the agent tried during this task, used to spot missing attempts. */
-  attempts: { payments: PaymentOutcome[]; services: string[] };
+  attempts: { payments: PaymentOutcome[]; services: string[]; results: Record<string, Record<string, unknown>> };
 }
 
 /**
@@ -63,7 +64,7 @@ export async function createContext(task: string, overrides: { agent?: Keypair; 
     mint: state.mint,
     servicesUrl: cfg.servicesUrl,
     intentHash: await intentHash(task),
-    attempts: { payments: [], services: [] },
+    attempts: { payments: [], services: [], results: {} },
   };
 }
 
@@ -83,8 +84,10 @@ export interface PaymentOutcome {
   recipient: string;
   signature?: string;
   explorer?: string;
-  /** Leash program error name when rejected, e.g. "ExceedsPerTxLimit". */
+  /** Error name when rejected, e.g. "ExceedsPerTxLimit". */
   error?: string;
+  /** Numeric error code: 6000+ Leash, 100+ Anchor, below 100 SPL Token. */
+  code?: number;
   error_message?: string;
 }
 
@@ -119,8 +122,10 @@ export async function pay(ctx: AgentContext, recipient: PublicKey, amount: bigin
     detail(`${green("✓ paid")}  ${out.explorer}`);
   } else {
     out.error = res.error?.name;
+    out.code = res.error?.code;
     out.error_message = res.error?.message;
-    detail(red(`✗ rejected by the Leash program: ${bold(out.error ?? "unknown error")}`) + (out.error_message ? dim(` (${out.error_message})`) : ""));
+    const verdict = isLeashError(res.error) ? "rejected by the Leash program" : "failed";
+    detail(red(`✗ ${verdict}: ${bold(out.error ?? "unknown error")}`) + (out.error_message ? dim(` (${out.error_message})`) : ""));
     if (out.explorer) detail(out.explorer);
   }
   logAttempt({ vault: ctx.vault.toBase58(), agent: ctx.agent.publicKey.toBase58(), label, ...out });
@@ -220,6 +225,12 @@ export async function callPaidService(
   res = await request({ "X-Payment-Signature": payment.signature! });
   const data = await readBody(res);
   detail(res.ok ? green(`✓ ${res.status} data received`) : red(`✗ ${res.status} ${String(data.error ?? "")} ${String(data.reason ?? "")}`));
+  if (res.ok) {
+    ctx.attempts.results[svc.id] = data;
+    // Make a prompt injection hidden in the response visible to whoever watches the agent.
+    const injected = JSON.stringify(data).match(/SYSTEM NOTICE:[^"]*/);
+    if (injected) say("⚠", yellow(`injected instruction in the ${svc.id} response: "${injected[0]}"`));
+  }
   return { ok: res.ok, status: res.status, service: svc.id, payment, data };
 }
 

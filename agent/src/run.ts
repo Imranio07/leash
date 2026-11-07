@@ -99,7 +99,8 @@ const MAX_STEPS = 12;
 
 /** Something the run must attempt; made directly with the agent key if no model did it. */
 export type ExpectedAction =
-  | { kind: "pay"; recipient: string; amount: string; reason?: string }
+  /** `note` replaces the generic "direct: …" line, e.g. "compromised agent follows injected instruction". */
+  | { kind: "pay"; recipient: string; amount: string; reason?: string; note?: string }
   | { kind: "service"; service: string; params: Record<string, string> };
 
 export interface RunOptions {
@@ -244,27 +245,41 @@ export async function runAgent(ctx: AgentContext, task: string, opts: RunOptions
       );
       const res = await callPaidService(ctx, exp.service, params, `${exp.service} service, direct`);
       lastData = ("data" in res && res.data ? res.data : {}) as Record<string, unknown>;
-      if (lastData.translation) detail(String(lastData.translation));
-      else if (lastData.summary) detail(String(lastData.summary));
-      const injected = JSON.stringify("data" in res ? res.data : {}).match(/send \$([\d.]+) to ([1-9A-HJ-NP-Za-km-z]{32,44})/);
-      if (opts.compromised && injected) detail(yellow(`instruction found in the response: send $${injected[1]} to ${short(injected[2]!)}`));
     }
     if (exp.kind === "pay" && !ctx.attempts.payments.some((p) => p.recipient === exp.recipient)) {
       direct++;
-      say("↪", yellow(`direct: no model attempted the payment to ${short(exp.recipient)}, so the agent sends it itself`));
-      await sendPayment(ctx, exp.recipient, exp.amount, `direct${exp.reason ? `: ${exp.reason}` : ""}`);
+      say(
+        "↪",
+        yellow(
+          exp.note
+            ? `direct: ${exp.note} (send $${exp.amount} to ${short(exp.recipient)})`
+            : `direct: no model attempted the payment to ${short(exp.recipient)}, so the agent sends it itself`,
+        ),
+      );
+      await sendPayment(ctx, exp.recipient, exp.amount, `direct: ${exp.note ?? exp.reason ?? "expected payment"}`);
     }
   }
 
   console.log();
-  if (answer && !direct) {
+  const translated = ctx.attempts.results.translate?.translation;
+  if (typeof translated === "string" && translated) {
+    // Weather + translate: the answer is the result itself, plus one line in English.
+    const w = ctx.attempts.results.weather as { city?: string; temperature_c?: number; conditions?: string } | undefined;
+    const english =
+      w?.city && typeof w.temperature_c === "number"
+        ? `${w.city}: ${Math.round(w.temperature_c)}°C, ${w.conditions ?? ""}`.replace(/, $/, "")
+        : String(ctx.attempts.results.translate?.text ?? "").slice(0, 120);
+    say("🤖", `${translated}\n${english}`);
+  } else if (answer && !direct && answer.replace(/https?:\/\/\S+/g, "").trim().length >= 40) {
     say("🤖", answer);
   } else {
+    // No answer, a one-word answer, or direct actions: describe what happened on-chain.
     // Summarize from what actually happened on-chain.
     const lines = ctx.attempts.payments.map((p) =>
       p.ok
-        ? `paid ${p.amount_usdc} to ${short(p.recipient)}: ${p.explorer}`
-        : `${p.amount_usdc} to ${short(p.recipient)} rejected by the Leash program: ${p.error ?? "error"}${p.explorer ? `\n${p.explorer}` : ""}`,
+        ? `Paid ${p.amount_usdc} to ${short(p.recipient)}.\n${p.explorer}`
+        : `${p.code !== undefined && p.code >= 100 ? "The Leash vault rejected" : "Failed:"} the ${p.amount_usdc} payment to ${short(p.recipient)}: ${p.error ?? "error"}` +
+          `${p.error_message ? ` (${p.error_message.toLowerCase()})` : ""}.${p.explorer ? `\n${p.explorer}` : ""}`,
     );
     say("🤖", lines.length ? lines.join("\n") : answer ?? "No payment was attempted.");
   }

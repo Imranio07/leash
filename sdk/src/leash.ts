@@ -208,6 +208,17 @@ export interface SendResult {
 
 const IDL_ERRORS = new Map(idlJson.errors.map((e) => [e.code, e]));
 
+/** SPL Token errors that can surface through agent_pay's transfer (codes below Anchor's 100). */
+const TOKEN_ERRORS: Record<number, { name: string; msg: string }> = {
+  1: { name: "InsufficientFunds", msg: "the vault does not hold enough USDC" },
+  3: { name: "MintMismatch", msg: "account not associated with this mint" },
+  4: { name: "OwnerMismatch", msg: "owner does not match" },
+  17: { name: "AccountFrozen", msg: "account is frozen" },
+};
+
+/** Codes from the Leash program itself: Anchor framework errors (100+) and ours (6000+). */
+export const isLeashError = (e: ProgramErrorInfo | undefined) => e?.code !== undefined && e.code >= 100;
+
 /** Turns an on-chain failure into an error name, preferring Anchor's "Error Code: X" log line. */
 export function decodeError(err: TransactionError | null, logs: string[]): ProgramErrorInfo {
   for (const line of logs) {
@@ -218,7 +229,10 @@ export function decodeError(err: TransactionError | null, logs: string[]): Progr
     ?.Custom;
   if (custom !== undefined) {
     const e = IDL_ERRORS.get(custom);
-    return e ? { name: e.name, code: e.code, message: e.msg } : { name: `Custom(${custom})`, code: custom };
+    if (e) return { name: e.name, code: e.code, message: e.msg };
+    const t = TOKEN_ERRORS[custom];
+    if (t) return { name: t.name, code: custom, message: t.msg };
+    return { name: `Custom(${custom})`, code: custom };
   }
   return { name: err ? JSON.stringify(err) : "UnknownError" };
 }

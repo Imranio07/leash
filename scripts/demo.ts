@@ -23,7 +23,7 @@ import {
   vaultTokenAddress,
   withdrawIx,
 } from "@leash/sdk";
-import { getConfig, loadKeypair, ROOT, saveKeypair } from "@leash/sdk/node";
+import { childEnv, getConfig, loadKeypair, ROOT, saveKeypair } from "@leash/sdk/node";
 import { runAgent, type ExpectedAction, type RunOptions } from "../agent/src/run";
 import { createContext, type PaymentOutcome } from "../agent/src/tools";
 import { bold, dim, green, red, yellow } from "../agent/src/ui";
@@ -49,7 +49,7 @@ async function startServices(): Promise<{ child: ChildProcess; url: string }> {
   const url = `http://localhost:${DEMO_SERVICES_PORT}`;
   const child = spawn(process.execPath, [resolve(ROOT, "node_modules/tsx/dist/cli.mjs"), resolve(ROOT, "services/src/server.ts")], {
     cwd: ROOT,
-    env: { ...process.env, SERVICES_PORT: String(DEMO_SERVICES_PORT) },
+    env: childEnv({ SERVICES_PORT: String(DEMO_SERVICES_PORT) }),
     stdio: "ignore",
   });
   for (let i = 0; i < 40; i++) {

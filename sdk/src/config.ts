@@ -1,9 +1,10 @@
 // Node-only: .env, file paths and keypair files.
 
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 import { Keypair, PublicKey } from "@solana/web3.js";
 
 /**
@@ -28,13 +29,40 @@ function findRoot(): string {
 export const ROOT = findRoot();
 const ENV_PATH = resolve(ROOT, ".env");
 
-let envLoaded = false;
+/** Keys whose current value came from .env (so a newer .env may replace them). */
+const fromFile = new Set<string>();
+let loadedMtime = -1;
 
-/** Loads ROOT/.env once. Variables already set in the shell win. */
+function readEnvFile(): Record<string, string> {
+  return existsSync(ENV_PATH) ? (parseEnv(readFileSync(ENV_PATH, "utf8")) as Record<string, string>) : {};
+}
+
+/**
+ * Loads ROOT/.env, and again whenever the file changes, so long-running processes (the
+ * dashboard server) see edits without a restart. A non-empty value set in the shell wins;
+ * an empty one does not block the file.
+ */
 export function loadEnv(): void {
-  if (envLoaded) return;
-  envLoaded = true;
-  if (existsSync(ENV_PATH)) process.loadEnvFile(ENV_PATH);
+  const mtime = existsSync(ENV_PATH) ? statSync(ENV_PATH).mtimeMs : 0;
+  if (mtime === loadedMtime) return;
+  loadedMtime = mtime;
+  for (const [key, value] of Object.entries(readEnvFile())) {
+    const current = process.env[key];
+    const fromShell = current !== undefined && current !== "" && !fromFile.has(key);
+    if (fromShell) continue;
+    process.env[key] = value;
+    fromFile.add(key);
+  }
+}
+
+/**
+ * Environment for a child process (agent, services) that reads .env itself: every key that
+ * .env defines is removed, so the child gets the file's current values, not a stale copy.
+ */
+export function childEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(readEnvFile())) delete out[key];
+  return { ...out, ...extra };
 }
 
 export function env(name: string, fallback = ""): string {
@@ -113,4 +141,5 @@ export function writeEnvValue(key: string, value: string): void {
   writeFileSync(ENV_PATH, next);
   chmodSync(ENV_PATH, 0o600); // holds API keys: owner-only, like keys/
   process.env[key] = value;
+  fromFile.add(key);
 }
