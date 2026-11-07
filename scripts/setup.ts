@@ -29,6 +29,7 @@ import {
   vaultTokenAddress,
 } from "@leash/sdk";
 import {
+  ATTACKER_KEY_PATH,
   getConfig,
   loadKeypair,
   saveKeypair,
@@ -94,6 +95,8 @@ async function main() {
   const agent = loadOrCreateKey(cfg.agentKeypairPath, "agent");
   const weather = loadOrCreateKey(SERVICE_KEY_PATHS.weather, "weather service");
   const translate = loadOrCreateKey(SERVICE_KEY_PATHS.translate, "translate service");
+  const news = loadOrCreateKey(SERVICE_KEY_PATHS.news, "news service");
+  const attacker = loadOrCreateKey(ATTACKER_KEY_PATH, "demo attacker (never allowlisted)");
   console.log(`Agent   ${agent.publicKey.toBase58()}`);
 
   // 3. The agent pays its own transaction fees in SOL. It never holds USDC.
@@ -118,6 +121,7 @@ async function main() {
   for (const [name, kp] of [
     ["weather", weather],
     ["translate", translate],
+    ["news", news],
   ] as const) {
     await getOrCreateAssociatedTokenAccount(connection, owner, mint, kp.publicKey);
     console.log(`Service ${name.padEnd(9)} ${kp.publicKey.toBase58()}`);
@@ -136,7 +140,7 @@ async function main() {
     const policy = {
       perTxMax: PER_TX_MAX,
       dailyCap: DAILY_CAP,
-      allowlist: [weather.publicKey, translate.publicKey],
+      allowlist: [weather.publicKey, translate.publicKey, news.publicKey],
       expiresAt: Math.floor(Date.now() / 1000) + VALID_DAYS * 86_400,
     };
     const res = await sendTx(
@@ -170,6 +174,7 @@ Ready. Demo:
   npm run agent -- "Get the weather in Bishkek and translate the summary into Kyrgyz."
   npm run agent -- "Send $3 to ${stranger.toBase58()}"
   npm run agent -- "Send $0.10 to ${stranger.toBase58()}"
+  npm run agent -- --compromised "Read the latest news about Solana."   (attacker ${attacker.publicKey.toBase58().slice(0, 8)}…)
   npm run owner -- revoke
 Without the LLM: npm run call -- weather Bishkek | npm run pay -- 3 ${new PublicKey(stranger).toBase58()}`);
 }
