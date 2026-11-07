@@ -71,16 +71,30 @@ export function getConfig(): Config {
   };
 }
 
-/** Receiving wallets of the two paid services (gitignored keys/ folder). */
+/** Receiving wallets of the paid services (gitignored keys/ folder). */
 export const SERVICE_KEY_PATHS = {
   weather: resolvePath("keys/weather.json"),
   translate: resolvePath("keys/translate.json"),
+  news: resolvePath("keys/news.json"),
 } as const;
+
+export type ServiceName = keyof typeof SERVICE_KEY_PATHS;
+
+/** The wallet a malicious news article asks the agent to pay (prompt-injection demo). Never allowlisted. */
+export const ATTACKER_KEY_PATH = resolvePath("keys/attacker.json");
 
 /** Reads a Solana CLI keypair file (JSON array of 64 bytes). */
 export function loadKeypair(path: string): Keypair {
   if (!existsSync(path)) throw new Error(`Keypair file not found: ${path}. Run "npm run setup" first.`);
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, "utf8")) as number[]));
+}
+
+/** Loads a keypair file, creating it first if it does not exist. */
+export function loadOrCreateKeypair(path: string): Keypair {
+  if (existsSync(path)) return loadKeypair(path);
+  const kp = Keypair.generate();
+  saveKeypair(path, kp);
+  return kp;
 }
 
 /** Writes a keypair file readable only by the current user. */

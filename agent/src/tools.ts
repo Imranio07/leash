@@ -34,19 +34,27 @@ export interface AgentContext {
   servicesUrl: string;
   /** sha256 of the user's task, recorded on-chain with every payment. */
   intentHash: Uint8Array;
+  /** What the agent tried during this task, used to spot missing attempts. */
+  attempts: { payments: PaymentOutcome[]; services: string[] };
 }
 
-/** Loads the agent key and its vault. The agent never touches the owner's key. */
-export async function createContext(task: string): Promise<AgentContext> {
+/**
+ * Loads the agent key and its vault (AGENT_KEYPAIR and LEASH_VAULT, unless given).
+ * The agent never touches the owner's key.
+ */
+export async function createContext(task: string, overrides: { agent?: Keypair; vault?: PublicKey } = {}): Promise<AgentContext> {
   const cfg = getConfig();
   const connection = new Connection(cfg.rpcUrl, "confirmed");
   const program = leashProgram(connection);
-  const agent = loadKeypair(cfg.agentKeypairPath);
-  const vaultEnv = env("LEASH_VAULT");
-  if (!vaultEnv) throw new Error('LEASH_VAULT is empty. Run "npm run setup" first.');
-  const vault = new PublicKey(vaultEnv);
+  const agent = overrides.agent ?? loadKeypair(cfg.agentKeypairPath);
+  let vault = overrides.vault;
+  if (!vault) {
+    const vaultEnv = env("LEASH_VAULT");
+    if (!vaultEnv) throw new Error('LEASH_VAULT is empty: create a vault in the dashboard or run "npm run setup".');
+    vault = new PublicKey(vaultEnv);
+  }
   const state = await fetchVault(program, vault);
-  if (!state) throw new Error(`No Leash vault at ${vaultEnv}. Run "npm run setup".`);
+  if (!state) throw new Error(`No Leash vault at ${vault.toBase58()}. Create one in the dashboard or run "npm run setup".`);
   return {
     connection,
     program,
@@ -55,6 +63,7 @@ export async function createContext(task: string): Promise<AgentContext> {
     mint: state.mint,
     servicesUrl: cfg.servicesUrl,
     intentHash: await intentHash(task),
+    attempts: { payments: [], services: [] },
   };
 }
 
@@ -115,6 +124,7 @@ export async function pay(ctx: AgentContext, recipient: PublicKey, amount: bigin
     if (out.explorer) detail(out.explorer);
   }
   logAttempt({ vault: ctx.vault.toBase58(), agent: ctx.agent.publicKey.toBase58(), label, ...out });
+  ctx.attempts.payments.push(out);
   return out;
 }
 
@@ -169,7 +179,12 @@ export async function listServices(ctx: AgentContext) {
 }
 
 /** Calls a paid service: request → 402 → agent_pay → retry with X-Payment-Signature. */
-export async function callPaidService(ctx: AgentContext, serviceId: string, params: Record<string, unknown>) {
+export async function callPaidService(
+  ctx: AgentContext,
+  serviceId: string,
+  params: Record<string, unknown>,
+  label = `${serviceId} service`,
+) {
   const svc = (await fetchServices(ctx)).find((s) => s.id === serviceId);
   if (!svc) return { ok: false, error: `unknown service "${serviceId}"` };
 
@@ -188,6 +203,7 @@ export async function callPaidService(ctx: AgentContext, serviceId: string, para
   const readBody = async (r: Response) => (await r.json().catch(() => ({}))) as Record<string, unknown>;
 
   say("🌐", `${svc.method} ${svc.path} ${dim(JSON.stringify(params))}`);
+  ctx.attempts.services.push(svc.id);
   let res = await request();
   if (res.status !== 402) {
     const data = await readBody(res);
@@ -197,7 +213,7 @@ export async function callPaidService(ctx: AgentContext, serviceId: string, para
 
   const quote = (await res.json()) as { price: string; recipient: string; mint: string; nonce: string };
   detail(yellow(`402 Payment Required: ${formatUsdc(quote.price)} to ${short(quote.recipient)}`));
-  const payment = await pay(ctx, new PublicKey(quote.recipient), BigInt(quote.price), `${svc.id} service`);
+  const payment = await pay(ctx, new PublicKey(quote.recipient), BigInt(quote.price), label);
   if (!payment.ok) return { ok: false, service: svc.id, payment };
 
   detail(dim("retrying with X-Payment-Signature"));

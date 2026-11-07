@@ -36,6 +36,7 @@ function Screen() {
     activity.refresh();
   };
   const labels = new Map(Object.entries(keys?.services ?? {}).map(([name, k]) => [k.toBase58(), `${name} service`]));
+  if (keys?.attacker) labels.set(keys.attacker.toBase58(), "attacker");
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -116,6 +117,7 @@ function Screen() {
 
         <section className="flex flex-col gap-6">
           <AgentConsole
+            attacker={keys?.attacker ?? null}
             vault={vault.view.state ? vault.address : null}
             revoked={vault.view.state?.revoked ?? false}
             onFinished={refreshAll}

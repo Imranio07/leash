@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { short } from "@/lib/config";
 
 interface Props {
+  /** Wallet of the prompt-injection attacker (from /api/keys), shown in the compromised preset. */
+  attacker: PublicKey | null;
   vault: PublicKey | null;
   revoked: boolean;
   /** Called when a run ends, so balances and the activity log refresh at once. */
@@ -22,8 +24,12 @@ interface ServicesStatus {
 const URL_RE = /(https?:\/\/[^\s)]+)/g;
 
 function Line({ text }: { text: string }) {
+  // Housekeeping (model switches, hints): small and gray.
+  if (/^\s*·/.test(text)) return <div className="whitespace-pre-wrap break-words text-xs text-zinc-500">{text.trim()}</div>;
   const parts = text.split(URL_RE);
-  const tone = /✗|rejected|error|failed/i.test(text)
+  const tone = /^(↪|☠️)/.test(text)
+    ? "text-amber-200"
+    : /✗|rejected|error|failed/i.test(text)
     ? "text-red-300"
     : /✓|paid\b/.test(text)
       ? "text-emerald-300"
@@ -49,7 +55,9 @@ function Line({ text }: { text: string }) {
   );
 }
 
-export default function AgentConsole({ vault, revoked, onFinished }: Props) {
+type Scenario = "weather" | "stranger-3" | "stranger-0.10" | "compromised" | "budget";
+
+export default function AgentConsole({ attacker, vault, revoked, onFinished }: Props) {
   const [task, setTask] = useState("Get the weather in Bishkek and translate the summary into Kyrgyz.");
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
@@ -59,12 +67,15 @@ export default function AgentConsole({ vault, revoked, onFinished }: Props) {
   // A random wallet nobody controls, for the "send money to a stranger" demo steps.
   const stranger = useMemo(() => Keypair.generate().publicKey.toBase58(), []);
 
-  const presets = [
-    { label: "Weather + translate", task: "Get the weather in Bishkek and translate the summary into Kyrgyz." },
-    { label: "Send $3 to a stranger", task: `Send $3 to ${stranger}` },
-    { label: "Send $0.10 to a stranger", task: `Send $0.10 to ${stranger}` },
-    { label: "Budget", task: "What is my budget?" },
+  const presets: { id: Scenario; label: string; task: string; danger?: boolean }[] = [
+    { id: "weather", label: "Weather + translate", task: "Get the weather in Bishkek and translate the summary into Kyrgyz." },
+    { id: "stranger-3", label: "Send $3 to a stranger", task: `Send $3 USDC to the wallet ${stranger}` },
+    { id: "stranger-0.10", label: "Send $0.10 to a stranger", task: `Send $0.10 USDC to the wallet ${stranger}` },
+    { id: "compromised", label: "☠ Compromised agent: read the news", task: "Read the latest news about Solana for me.", danger: true },
+    { id: "budget", label: "Budget", task: "What is my budget?" },
   ];
+  // A preset's scenario applies only while its text is unchanged.
+  const scenario = presets.find((p) => p.task === task)?.id ?? null;
 
   useEffect(() => {
     let alive = true;
@@ -95,7 +106,7 @@ export default function AgentConsole({ vault, revoked, onFinished }: Props) {
       const res = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, vault: vault.toBase58() }),
+        body: JSON.stringify({ task, vault: vault.toBase58(), scenario, stranger }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -146,8 +157,16 @@ export default function AgentConsole({ vault, revoked, onFinished }: Props) {
       <div className="mt-4 flex flex-wrap gap-2">
         {presets.map((p) => (
           <button
-            key={p.label}
-            className={`rounded-full border px-3 py-1 text-xs transition ${task === p.task ? "border-emerald-500 text-emerald-300" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}
+            key={p.id}
+            className={`rounded-full border px-3 py-1 text-xs transition ${
+              task === p.task
+                ? p.danger
+                  ? "border-red-500 text-red-300"
+                  : "border-emerald-500 text-emerald-300"
+                : p.danger
+                  ? "border-red-900 text-red-300/80 hover:border-red-600"
+                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500"
+            }`}
             onClick={() => setTask(p.task)}
             disabled={running}
           >
@@ -181,6 +200,17 @@ export default function AgentConsole({ vault, revoked, onFinished }: Props) {
         )}
       </form>
       {!vault && <p className="mt-2 text-sm text-zinc-500">Create a vault first.</p>}
+      {scenario === "compromised" && (
+        <p className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+          Simulation of a hijacked agent: it blindly obeys instructions inside service responses. The news service hides
+          one that says to pay {attacker ? <span className="mono">{short(attacker)}</span> : "an attacker"}.
+        </p>
+      )}
+      {(scenario === "stranger-3" || scenario === "stranger-0.10") && (
+        <p className="mt-2 text-xs text-zinc-500">
+          Stranger: <span className="mono">{stranger}</span> (random wallet, not on the allowlist)
+        </p>
+      )}
       {vault && revoked && (
         <p className="mt-2 text-sm text-amber-200">
           This vault is revoked: every payment the agent tries will fail with <span className="mono">VaultRevoked</span>.

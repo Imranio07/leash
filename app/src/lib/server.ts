@@ -1,7 +1,7 @@
 // Server-only helpers for the API routes. Never import this from a client component:
 // it reads keypair files from keys/ and the owner key named in .env.
 
-import { getConfig, loadKeypair, SERVICE_KEY_PATHS } from "@leash/sdk/node";
+import { ATTACKER_KEY_PATH, getConfig, loadKeypair, loadOrCreateKeypair, SERVICE_KEY_PATHS } from "@leash/sdk/node";
 import { Connection, type Keypair, type PublicKey } from "@solana/web3.js";
 import { NextResponse } from "next/server";
 import { DEVNET_GENESIS_HASH } from "./config";
@@ -17,17 +17,14 @@ export function agentKeypair(): Keypair {
   return loadKeypair(getConfig().agentKeypairPath);
 }
 
-/** Receiving wallets of the two paid services, if their keys exist. */
+/** Receiving wallets of the paid services (created on first use; they are demo wallets). */
 export function serviceWallets(): Record<string, PublicKey> {
-  const out: Record<string, PublicKey> = {};
-  for (const [name, path] of Object.entries(SERVICE_KEY_PATHS)) {
-    try {
-      out[name] = loadKeypair(path).publicKey;
-    } catch {
-      // Service key not created yet.
-    }
-  }
-  return out;
+  return Object.fromEntries(Object.entries(SERVICE_KEY_PATHS).map(([name, path]) => [name, loadOrCreateKeypair(path).publicKey]));
+}
+
+/** The wallet the malicious news article asks the agent to pay. Never allowlisted. */
+export function attackerWallet(): PublicKey {
+  return loadOrCreateKeypair(ATTACKER_KEY_PATH).publicKey;
 }
 
 let genesisCache: string | null = null;

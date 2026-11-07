@@ -22,7 +22,13 @@ function Wallet({ address, labels }: { address: string; labels: Map<string, stri
       <a className="mono link" href={explorerAddress(address)} target="_blank" rel="noreferrer">
         {short(address)}
       </a>
-      {label && <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-300">{label}</span>}
+      {label && (
+        <span
+          className={`rounded px-1.5 py-0.5 text-xs ${label === "attacker" ? "bg-red-500/20 font-semibold text-red-300" : "bg-zinc-800 text-zinc-300"}`}
+        >
+          {label}
+        </span>
+      )}
     </span>
   );
 }

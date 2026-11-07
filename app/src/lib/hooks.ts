@@ -74,6 +74,8 @@ export function useBalances(owner: PublicKey | null) {
 export interface Keys {
   agent: PublicKey;
   services: Record<string, PublicKey>;
+  /** Wallet of the prompt-injection attacker in the news demo. */
+  attacker: PublicKey | null;
   /** Vault the CLI agent currently points at (LEASH_VAULT in .env). */
   cliVault: string | null;
 }
@@ -90,6 +92,7 @@ export function useKeys() {
         const data = (await r.json()) as {
           agent?: string;
           services?: Record<string, string>;
+          attacker?: string;
           cliVault?: string | null;
           error?: string;
         };
@@ -98,6 +101,7 @@ export function useKeys() {
         setKeys({
           agent: new PublicKey(data.agent),
           services: Object.fromEntries(Object.entries(data.services ?? {}).map(([k, v]) => [k, new PublicKey(v)])),
+          attacker: data.attacker ? new PublicKey(data.attacker) : null,
           cliVault: data.cliVault ?? null,
         });
         setError(null);
