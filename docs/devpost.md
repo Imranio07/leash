@@ -3,6 +3,7 @@
 **Tagline:** An AI agent that buys services on its own, but can't spend more than its owner allowed, even if it is tricked or its key leaks. The rules live in a Solana program, not on our server.
 
 - **Demo video:** https://youtu.be/y5pidHukmPo
+- **Live demo:** https://leash-gules.vercel.app/ (devnet: create your own vault with Phantom, or open [the vault from the video](https://leash-gules.vercel.app/vault/9chWTKp9ud2CWUXSKE5UAQSCr5KmTgQQhVLPzhgmN2Jj) without a wallet)
 - **GitHub:** https://github.com/Imranio07/leash
 - **Program (devnet):** [`3Szo7yDv7saKcXDuYA3BCgRV8YrajNFNCxU3c1WRAHu6`](https://explorer.solana.com/address/3Szo7yDv7saKcXDuYA3BCgRV8YrajNFNCxU3c1WRAHu6?cluster=devnet)
 
@@ -29,7 +30,7 @@ The dashboard shows the owner's side (Phantom) and the agent console on one scre
 - **Tests:** 18 Rust tests on LiteSVM, one per error, including the exact daily-cap boundary and the reset at 00:00 UTC (time travel by setting the clock sysvar). We also broke the program on purpose (mutation testing) to check that the tests catch it.
 - **Paid APIs:** a small Node server. No payment → `402 {price, recipient}`. With `X-Payment-Signature`, it reads the transaction over RPC: confirmed, invokes Leash, pays this service at least the price, not used before.
 - **Agent:** TypeScript with OpenAI-compatible tool calling over a chain of models (Groq gpt-oss-120b first, Gemini Flash as fallbacks). It never checks limits itself; that is the vault's job.
-- **Dashboard:** Next.js 16, Tailwind 4, Solana Wallet Adapter. The activity log decodes the vault's transactions with the IDL. The agent console runs the agent on the server and streams its output, so the agent key never reaches the browser.
+- **Dashboard:** Next.js 16, Tailwind 4, Solana Wallet Adapter. The activity log decodes the vault's transactions with the IDL. The agent console runs the agent on the server and streams its output, so the agent key never reaches the browser. The public live demo on Vercel has the owner side, a test-USDC faucet and read-only vault pages; its RPC calls go through a server proxy, so the RPC key stays private.
 - **MCP server:** `pay_for_api(service, params)`, `list_services()`, `get_budget()` on the official MCP SDK, reusing the agent's payment code.
 - **Checks:** `npm run demo` replays the whole scenario from the CLI and compares each step with the expected result; `npm run e2e` drives the real dashboard in headless Chrome and clicks every preset.
 - **Claude Code** was our pair programmer for most of the code, tests and docs. We reviewed, ran and tested everything on devnet ourselves.
@@ -65,4 +66,4 @@ The dashboard shows the owner's side (Phantom) and the agent console on one scre
 
 ## Built with
 
-solana · anchor · rust · spl-token · litesvm · typescript · next.js · tailwindcss · solana-wallet-adapter · phantom · model-context-protocol · groq · gemini · open-meteo · claude-code
+solana · anchor · rust · spl-token · litesvm · typescript · next.js · tailwindcss · solana-wallet-adapter · phantom · vercel · model-context-protocol · groq · gemini · open-meteo · claude-code

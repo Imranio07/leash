@@ -1,8 +1,10 @@
 # Leash: the payment firewall for AI agents
 
-### [▶ Demo video](https://youtu.be/y5pidHukmPo)
+### [▶ Demo video](https://youtu.be/y5pidHukmPo) · [Live demo](https://leash-gules.vercel.app/)
 
 [![Leash demo video on YouTube](https://img.youtube.com/vi/y5pidHukmPo/maxresdefault.jpg)](https://youtu.be/y5pidHukmPo)
+
+**[Live demo](https://leash-gules.vercel.app/)** (Solana devnet): connect Phantom to create, fund, limit, revoke and withdraw your own vault (test USDC included), or open [the vault from the video](https://leash-gules.vercel.app/vault/9chWTKp9ud2CWUXSKE5UAQSCr5KmTgQQhVLPzhgmN2Jj) without a wallet. The agent and the paid services run locally (`npm run demo`).
 
 **This AI agent can buy services on its own, but even if it is tricked or its key leaks, it cannot spend more than the owner allowed: the rules are enforced by a Solana program, not by our server.**
 
@@ -163,6 +165,7 @@ Amounts are integers in base units everywhere (USDC has 6 decimals: $0.05 = `50_
 - **Rejected payments land on-chain on purpose** (sent without preflight), so the agent pays a ~0.000005 SOL fee for each rejection.
 - **Hackathon-grade, not audited.** Devnet only, with our own 6-decimal test USDC mint, named "Leash Test USDC" (tUSDC) through Metaplex metadata so wallets don't show it as unknown (`npm run token-metadata`). Circle devnet USDC works too via `USDC_MINT`. The program is upgradeable by the deployer key.
 - **Local demo shortcuts:** the dashboard server holds the agent key (to run the agent console) and uses the CLI owner key as the test-USDC faucet. The agent key never reaches the browser.
+- **Public site (Vercel):** no agent key and no agent console. The browser's RPC calls go through a server proxy (`/api/rpc/devnet`, only the methods the dashboard uses), so the RPC key stays on the server. The faucet is a separate wallet that holds only test USDC and SOL (it is neither the mint authority nor the upgrade authority) and gives $20 once per 10 minutes per wallet, checked on-chain.
 - **The "compromised agent" is a simulation:** a system prompt that tells the agent to obey instructions found in service responses, and it is labeled as such everywhere.
 
 ## Demo
@@ -215,6 +218,8 @@ npm run app                            # http://localhost:3000
 3. **Create vault**: the form is prefilled with the demo policy ($0.25 / $1 / weather + translate + news / 7 days / $5). One Phantom signature.
 4. Run the presets in the agent console: weather + translate, $3 to a stranger, $0.10 to a stranger, compromised agent. Watch the activity log fill from the chain.
 5. **Revoke**, then run the agent again: `VaultRevoked`. **Withdraw** gets the money back.
+
+**Public dashboard (the live demo):** the same app built with `NEXT_PUBLIC_LEASH_PUBLIC_DEMO=1`: owner side, faucet and read-only `/vault/<address>` pages; the agent console becomes a note. `npm run vercel-env` funds a dedicated faucet wallet and writes every variable to `keys/vercel.env` (gitignored) for Vercel's env import. Vercel project: Root Directory `app`.
 
 For a fresh vault later: `npm run fresh` creates a new agent key and everything it needs; the dashboard shows the create form within seconds. It refuses while the current vault still holds USDC (withdraw first, or `-- --force`).
 
