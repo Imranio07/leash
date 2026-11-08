@@ -1,14 +1,12 @@
 # Leash: the payment firewall for AI agents
 
+### [▶ Demo video](https://youtu.be/y5pidHukmPo)
+
+[![Leash demo video on YouTube](https://img.youtube.com/vi/y5pidHukmPo/maxresdefault.jpg)](https://youtu.be/y5pidHukmPo)
+
 **This AI agent can buy services on its own, but even if it is tricked or its key leaks, it cannot spend more than the owner allowed: the rules are enforced by a Solana program, not by our server.**
 
 Built in 48 hours for the Solana Hackathon (MLH, Nov 6–8, 2026). Everything runs on **devnet**.
-
-<!-- Demo video: replace with the YouTube/Loom link -->
-> 🎬 **Demo video:** _coming soon_
-
-<!-- Screenshot: dashboard with the owner on the left and the agent console on the right -->
-> 🖼️ **Screenshot:** _docs/screenshot-dashboard.png (coming soon)_
 
 | | |
 | --- | --- |
@@ -43,6 +41,21 @@ On top of the program:
 - **An LLM agent** (Groq gpt-oss-120b or Gemini) with tools: `get_budget`, `list_services`, `call_paid_service`, `send_payment`. It never checks limits itself; the vault does.
 - **An MCP server** with `pay_for_api(service, params)`, so any MCP-capable agent can spend through a Leash vault under the same rules.
 - **A dashboard** (Next.js + Phantom) where the owner creates and funds the vault, watches every payment and rejection live from the chain, and hits a big red Revoke button. The agent console sits on the same screen.
+
+## Dashboard
+
+The owner (left) creates and funds the vault, sets the rules and watches every payment and rejection, read straight from the chain. The agent (right) runs on the server with its own key and pays on its own.
+
+![Weather + translate: two HTTP-402 payments of $0.05 and the forecast in Kyrgyz](docs/screenshots/dashboard-weather.png)
+*The agent buys the weather and a Kyrgyz translation: two 402 responses, two $0.05 payments through `agent_pay`, spent today 10% of the daily cap.*
+
+![Compromised agent: the news feed hides a payment instruction; the program rejects the attacker](docs/screenshots/dashboard-compromised.png)
+*A compromised agent obeys an instruction hidden in a paid news feed and tries to pay the attacker. The program rejects it with `RecipientNotAllowed`; the log also shows `ExceedsPerTxLimit` ($3) and `RecipientNotAllowed` ($0.10 to a stranger).*
+
+![After Revoke: every agent payment fails with VaultRevoked; only Withdraw is left](docs/screenshots/dashboard-revoked.png)
+*After the owner revokes, every payment fails with `VaultRevoked`. The owner can still withdraw.*
+
+<sub>Screenshots: headless Chrome on the local dashboard, devnet. The owner is shown through a read-only test wallet (the CLI owner key); everything in the console and the activity log is real devnet activity.</sub>
 
 ## Why Solana
 
