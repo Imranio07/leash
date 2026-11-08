@@ -25,7 +25,8 @@
     "demo": "tsx scripts/demo.ts",
     "mcp": "tsx mcp/src/server.ts",
     "token-metadata": "tsx scripts/token-metadata.ts",
-    "e2e": "tsx scripts/e2e-console.ts"
+    "e2e": "tsx scripts/e2e-console.ts",
+    "vercel-env": "tsx scripts/vercel-env.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

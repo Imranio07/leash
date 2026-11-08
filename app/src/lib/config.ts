@@ -3,7 +3,12 @@
 import { LEASH_PROGRAM_ID } from "@leash/sdk";
 import { PublicKey } from "@solana/web3.js";
 
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://api.devnet.solana.com";
+const rawRpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://api.devnet.solana.com";
+/** True when the browser talks to the RPC through the dashboard server (public site). */
+export const RPC_PROXIED = rawRpcUrl.startsWith("/");
+/** A path (the server RPC proxy) is resolved against the page's origin: web3.js needs a full URL. */
+export const RPC_URL =
+  RPC_PROXIED && typeof window !== "undefined" ? new URL(rawRpcUrl, window.location.origin).toString() : rawRpcUrl;
 export const PROGRAM_ID = process.env.NEXT_PUBLIC_PROGRAM_ID
   ? new PublicKey(process.env.NEXT_PUBLIC_PROGRAM_ID)
   : LEASH_PROGRAM_ID;

@@ -1,17 +1,19 @@
 "use client";
 
-import { explorerAddress, rpcHost } from "@leash/sdk";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { PROGRAM_ID, RPC_URL, short, USDC_MINT } from "@/lib/config";
+import { USDC_MINT } from "@/lib/config";
 import { useActivity } from "@/lib/activity";
 import { useBalances, useIsDevnet, useKeys, useVault } from "@/lib/hooks";
+import { PUBLIC_DEMO } from "@/lib/publicDemo";
 import ActivityLog from "./ActivityLog";
 import AgentConsole from "./AgentConsole";
 import CreateVaultForm from "./CreateVaultForm";
 import DepositForm from "./DepositForm";
 import FaucetButton from "./FaucetButton";
+import Header from "./Header";
 import OwnerActions from "./OwnerActions";
 import Providers from "./Providers";
+import PublicAgentNotice from "./PublicAgentNotice";
 import VaultCard from "./VaultCard";
 import WalletPanel, { Hint } from "./WalletPanel";
 
@@ -40,26 +42,7 @@ function Screen() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">🐕‍🦺</span>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Leash</h1>
-            <p className="text-sm text-zinc-400">The payment firewall for AI agents</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 text-sm">
-          <span
-            className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300"
-            title={`RPC: ${rpcHost(RPC_URL)}`}
-          >
-            devnet · {rpcHost(RPC_URL)}
-          </span>
-          <a className="mono link" href={explorerAddress(PROGRAM_ID)} target="_blank" rel="noreferrer">
-            program {short(PROGRAM_ID)}
-          </a>
-        </div>
-      </header>
+      <Header />
 
       <main className="grid gap-6 lg:grid-cols-2">
         <section className="flex flex-col gap-6">
@@ -96,7 +79,7 @@ function Screen() {
                 state={vault.view.state}
                 balance={vault.view.balance}
                 keys={keys}
-                onCliChanged={reloadKeys}
+                onCliChanged={PUBLIC_DEMO ? undefined : reloadKeys}
               />
               <div className="card">
                 <DepositForm
@@ -121,12 +104,16 @@ function Screen() {
         </section>
 
         <section className="flex flex-col gap-6">
-          <AgentConsole
-            attacker={keys?.attacker ?? null}
-            vault={vault.view.state ? vault.address : null}
-            revoked={vault.view.state?.revoked ?? false}
-            onFinished={refreshAll}
-          />
+          {PUBLIC_DEMO ? (
+            <PublicAgentNotice agent={keys?.agent ?? null} />
+          ) : (
+            <AgentConsole
+              attacker={keys?.attacker ?? null}
+              vault={vault.view.state ? vault.address : null}
+              revoked={vault.view.state?.revoked ?? false}
+              onFinished={refreshAll}
+            />
+          )}
         </section>
       </main>
     </div>

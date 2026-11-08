@@ -11,8 +11,10 @@ import { usePolling } from "./hooks";
 
 const MAX_SIGNATURES = 30;
 const MAX_FETCH_TRIES = 5;
-/** The public devnet RPC rate-limits batched transaction lookups, so decode a few per tick, newest first. */
+/** The public devnet RPC rate-limits batched transaction lookups, so decode a few at a time, newest first. */
 const FETCH_PER_TICK = 3;
+const ROUNDS_PER_TICK = 4;
+const ROUND_GAP_MS = 400;
 
 interface Pending {
   slot: number;
@@ -51,14 +53,24 @@ export function useActivity(program: LeashProgram, vault: PublicKey | null) {
       }
     }
 
-    const toFetch = [...pending.current.entries()]
-      .filter(([, p]) => p.tries < MAX_FETCH_TRIES)
-      .sort((a, b) => b[1].slot - a[1].slot)
-      .slice(0, FETCH_PER_TICK)
-      .map(([s]) => s);
-    if (toFetch.length) {
+    const publish = () => {
+      if (lastVault.current !== key) return; // another vault is on screen now
+      const entries = [...decoded.current.values()].flat().sort((a, b) => b.slot - a.slot || b.signature.localeCompare(a.signature));
+      setView({ entries, pending: pending.current.size, loaded: true });
+    };
+
+    // A few small batches per tick, newest first, so a long history fills in within seconds.
+    for (let round = 0; round < ROUNDS_PER_TICK; round++) {
+      const toFetch = [...pending.current.entries()]
+        .filter(([, p]) => p.tries < MAX_FETCH_TRIES)
+        .sort((a, b) => b[1].slot - a[1].slot)
+        .slice(0, FETCH_PER_TICK)
+        .map(([s]) => s);
+      if (!toFetch.length || lastVault.current !== key) break;
+      if (round > 0) await new Promise((r) => setTimeout(r, ROUND_GAP_MS));
       try {
         const txs = await connection.getParsedTransactions(toFetch, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+        if (lastVault.current !== key) return;
         txs.forEach((tx, i) => {
           const sig = toFetch[i]!;
           if (tx) {
@@ -71,11 +83,11 @@ export function useActivity(program: LeashProgram, vault: PublicKey | null) {
       } catch (e) {
         // Rate-limited: leave them pending and try again next tick.
         if (!/429|Too many requests/i.test(String(e))) throw e;
+        break;
       }
+      publish();
     }
-
-    const entries = [...decoded.current.values()].flat().sort((a, b) => b.slot - a.slot || b.signature.localeCompare(a.signature));
-    setView({ entries, pending: pending.current.size, loaded: true });
+    publish();
   }, [vault?.toBase58(), program]);
 
   return { view, refresh };

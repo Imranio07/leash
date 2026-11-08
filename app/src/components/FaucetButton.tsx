@@ -3,13 +3,18 @@
 import { formatUsdc } from "@leash/sdk";
 import type { PublicKey } from "@solana/web3.js";
 import { useState } from "react";
+import { PUBLIC_DEMO, PUBLIC_FAUCET_AMOUNT_USDC, PUBLIC_FAUCET_COOLDOWN_MIN } from "@/lib/publicDemo";
+
+const TITLE = PUBLIC_DEMO
+  ? `Sends $${PUBLIC_FAUCET_AMOUNT_USDC} of test USDC on devnet, once per ${PUBLIC_FAUCET_COOLDOWN_MIN} minutes per wallet`
+  : "Mints $20 of test USDC on devnet";
 
 interface Props {
   wallet: PublicKey;
   onDone: () => void;
 }
 
-/** Asks the dashboard server to mint $20 of test USDC to the connected wallet. */
+/** Asks the dashboard server for $20 of test USDC for the connected wallet. */
 export default function FaucetButton({ wallet, onDone }: Props) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string; href?: string } | null>(null);
@@ -36,8 +41,8 @@ export default function FaucetButton({ wallet, onDone }: Props) {
 
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <button className="btn-secondary" onClick={drip} disabled={busy} title="Mints $20 of test USDC on devnet">
-        {busy ? "Minting…" : "Get test USDC"}
+      <button className="btn-secondary" onClick={drip} disabled={busy} title={TITLE}>
+        {busy ? "Sending…" : "Get test USDC"}
       </button>
       {result &&
         (result.ok ? (

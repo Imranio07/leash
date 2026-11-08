@@ -6,6 +6,7 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { explorerAddress } from "@leash/sdk";
 import { short, USDC_MINT } from "@/lib/config";
 import type { Balances } from "@/lib/hooks";
+import { PUBLIC_DEMO } from "@/lib/publicDemo";
 
 interface Props {
   balances: Balances;
@@ -28,6 +29,15 @@ export default function WalletPanel({ balances, isDevnet, usdcAction }: Props) {
             The owner creates a vault, funds it and sets the rules. Everything runs on <b>Solana devnet</b>: switch
             Phantom to Devnet first (Settings → Developer Settings → Testnet Mode).
           </p>
+          {PUBLIC_DEMO && (
+            <p className="mt-2 max-w-md text-sm text-zinc-400">
+              You need a little devnet SOL for fees: get it free at{" "}
+              <a className="link" href="https://faucet.solana.com" target="_blank" rel="noreferrer">
+                faucet.solana.com
+              </a>
+              . Test USDC comes from the <b>Get test USDC</b> button once you are connected.
+            </p>
+          )}
         </div>
         <button className="btn-primary px-6 py-3 text-base" onClick={() => setVisible(true)} disabled={connecting}>
           {connecting ? "Connecting…" : "Connect Phantom"}

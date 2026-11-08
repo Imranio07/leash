@@ -7,6 +7,7 @@ import type { AccountInfo } from "@solana/web3.js";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEVNET_GENESIS_HASH, POLL_MS, PROGRAM_ID, USDC_MINT } from "./config";
+import { PUBLIC_DEMO, publicKeysFromEnv } from "./publicDemo";
 
 /**
  * Runs `fn` now and every `ms`, with a manual `refresh()`. Skips ticks while the tab is
@@ -109,6 +110,7 @@ export interface Keys {
 /**
  * Public keys from the server (agent, service wallets, attacker). Never includes private keys.
  * Re-read every few seconds, so `npm run fresh` shows up without reloading the page.
+ * On the public site they come from env and never change.
  */
 export function useKeys() {
   const [keys, setKeys] = useState<Keys | null>(null);
@@ -116,8 +118,15 @@ export function useKeys() {
   const last = useRef<string>("");
 
   const reload = usePolling(async () => {
-    const r = await fetch("/api/keys", { cache: "no-store" });
-    const text = await r.text();
+    let r = { ok: true, status: 200 };
+    let text: string;
+    if (PUBLIC_DEMO) {
+      text = JSON.stringify(publicKeysFromEnv());
+    } else {
+      const res = await fetch("/api/keys", { cache: "no-store" });
+      r = res;
+      text = await res.text();
+    }
     const data = JSON.parse(text) as {
       agent?: string;
       services?: Record<string, string>;
@@ -126,7 +135,7 @@ export function useKeys() {
       error?: string;
     };
     if (!r.ok || !data.agent) {
-      setError(data.error ?? `HTTP ${r.status}`);
+      setError(data.error ?? (PUBLIC_DEMO ? "NEXT_PUBLIC_AGENT_PUBKEY is not set" : `HTTP ${r.status}`));
       return;
     }
     setError(null);
@@ -138,7 +147,7 @@ export function useKeys() {
       attacker: data.attacker ? new PublicKey(data.attacker) : null,
       cliVault: data.cliVault ?? null,
     });
-  }, [], 5000);
+  }, [], PUBLIC_DEMO ? 3_600_000 : 5000);
 
   return { keys, error, reload };
 }
@@ -152,12 +161,17 @@ export interface VaultView {
 
 /** The vault of (owner, agent): its PDA, on-chain state and token balance, polled. */
 export function useVault(owner: PublicKey | null, agent: PublicKey | null) {
-  const { connection } = useConnection();
-  const program: LeashProgram = useMemo(() => leashProgram(connection, PROGRAM_ID), [connection]);
   const address = useMemo(
     () => (owner && agent ? vaultAddress(owner, agent, PROGRAM_ID) : null),
     [owner?.toBase58(), agent?.toBase58()], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  return useVaultAt(address);
+}
+
+/** A vault by address (read-only pages): on-chain state and token balance, polled. */
+export function useVaultAt(address: PublicKey | null) {
+  const { connection } = useConnection();
+  const program: LeashProgram = useMemo(() => leashProgram(connection, PROGRAM_ID), [connection]);
   const [view, setView] = useState<VaultView>({ loaded: false, state: null, balance: 0n });
 
   const refresh = usePolling(async () => {

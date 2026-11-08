@@ -6,6 +6,7 @@ import type { PublicKey } from "@solana/web3.js";
 import { useState } from "react";
 import { short, USDC_MINT } from "@/lib/config";
 import type { Balances, Keys } from "@/lib/hooks";
+import { PUBLIC_DEMO } from "@/lib/publicDemo";
 import { sendOwnerTx } from "@/lib/tx";
 import PolicyFields, { parsePolicy, type PolicyForm } from "./PolicyFields";
 import { Hint } from "./WalletPanel";
@@ -58,7 +59,8 @@ export default function CreateVaultForm({ program, keys, vaultAddress, balances,
 
       // Point the CLI agent at the new vault so `npm run agent` works without editing files.
       let cli = "LEASH_VAULT written to .env: the CLI agent uses this vault now.";
-      try {
+      if (PUBLIC_DEMO) cli = "";
+      else try {
         const r = await fetch("/api/vault/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -91,7 +93,7 @@ export default function CreateVaultForm({ program, keys, vaultAddress, balances,
             {short(vaultAddress, 6)}
           </a>
         </p>
-        <p className="mt-2 text-sm text-zinc-400">{done.cli}</p>
+        {done.cli && <p className="mt-2 text-sm text-zinc-400">{done.cli}</p>}
       </div>
     );
   }
@@ -107,7 +109,9 @@ export default function CreateVaultForm({ program, keys, vaultAddress, balances,
       <div className="mt-5 grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
-            <span className="label">Agent key (from keys/agent.json, public key only)</span>
+            <span className="label">
+              {PUBLIC_DEMO ? "Agent key (the Leash demo agent, public key only)" : "Agent key (from keys/agent.json, public key only)"}
+            </span>
             <input className="input mono mt-1 text-sm" value={keys.agent.toBase58()} readOnly />
           </label>
           <label className="block">

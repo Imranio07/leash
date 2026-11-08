@@ -11,8 +11,10 @@ interface Props {
   state: VaultState;
   balance: bigint;
   keys: Keys | null;
-  /** Re-reads /api/keys after the CLI vault changes. */
+  /** Re-reads /api/keys after the CLI vault changes. Without it (public site, read-only page) the CLI row is hidden. */
   onCliChanged?: () => void;
+  /** Also show the owner wallet (read-only page; the dashboard shows it in the wallet panel). */
+  showOwner?: boolean;
 }
 
 type Status = "active" | "revoked" | "expired";
@@ -39,7 +41,7 @@ function timeLeft(expiresAt: number): string {
   return `${h}h ${m}m left`;
 }
 
-export default function VaultCard({ address, state, balance, keys, onCliChanged }: Props) {
+export default function VaultCard({ address, state, balance, keys, onCliChanged, showOwner = false }: Props) {
   const status = statusOf(state);
   const spent = spentToday(state);
   const pct = state.dailyCap > 0n ? Number((spent * 1000n) / state.dailyCap) / 10 : 0;
@@ -109,6 +111,15 @@ export default function VaultCard({ address, state, balance, keys, onCliChanged 
           {new Date(state.expiresAt * 1000).toLocaleString()} <span className="text-zinc-500">· {timeLeft(state.expiresAt)}</span>
         </dd>
 
+        {showOwner && <dt className="label self-center">Owner</dt>}
+        {showOwner && (
+          <dd>
+            <a className="mono link" href={explorerAddress(state.owner)} target="_blank" rel="noreferrer">
+              {state.owner.toBase58()}
+            </a>
+          </dd>
+        )}
+
         <dt className="label self-center">Agent key</dt>
         <dd>
           <a className="mono link" href={explorerAddress(state.agent)} target="_blank" rel="noreferrer">
@@ -131,8 +142,8 @@ export default function VaultCard({ address, state, balance, keys, onCliChanged 
           ))}
         </dd>
 
-        <dt className="label self-center">CLI agent</dt>
-        <dd className="flex flex-wrap items-center gap-3">
+        {onCliChanged && <dt className="label self-center">CLI agent</dt>}
+        {onCliChanged && <dd className="flex flex-wrap items-center gap-3">
           {isCliVault ? (
             <span className="text-emerald-300">points at this vault (LEASH_VAULT in .env)</span>
           ) : (
@@ -144,7 +155,7 @@ export default function VaultCard({ address, state, balance, keys, onCliChanged 
             </>
           )}
           {cliError && <span className="text-red-300">{cliError}</span>}
-        </dd>
+        </dd>}
       </dl>
     </div>
   );

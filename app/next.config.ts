@@ -15,7 +15,11 @@ function rootEnv(): Record<string, string> {
   }
   return out;
 }
-const env = rootEnv();
+// Public (hosted) mode: never read the repo .env, and route the browser's RPC through the
+// server proxy (/api/rpc/devnet) so the RPC key stays on the server.
+const publicDemo = process.env.NEXT_PUBLIC_LEASH_PUBLIC_DEMO === "1";
+const env: Record<string, string> = publicDemo ? {} : rootEnv();
+const defaultRpc = publicDemo ? "/api/rpc/devnet" : (env.RPC_URL ?? "https://api.devnet.solana.com");
 const idl = JSON.parse(readFileSync(path.join(repoRoot, "sdk/src/idl/leash.json"), "utf8")) as { address: string };
 
 const config: NextConfig = {
@@ -23,7 +27,7 @@ const config: NextConfig = {
   turbopack: { root: repoRoot },
   outputFileTracingRoot: repoRoot,
   env: {
-    NEXT_PUBLIC_RPC_URL: process.env.NEXT_PUBLIC_RPC_URL ?? env.RPC_URL ?? "https://api.devnet.solana.com",
+    NEXT_PUBLIC_RPC_URL: process.env.NEXT_PUBLIC_RPC_URL || defaultRpc,
     NEXT_PUBLIC_PROGRAM_ID: process.env.NEXT_PUBLIC_PROGRAM_ID ?? idl.address,
     NEXT_PUBLIC_USDC_MINT: process.env.NEXT_PUBLIC_USDC_MINT ?? env.USDC_MINT ?? "",
     NEXT_PUBLIC_SERVICES_URL: process.env.NEXT_PUBLIC_SERVICES_URL ?? env.SERVICES_URL ?? "http://localhost:4021",
